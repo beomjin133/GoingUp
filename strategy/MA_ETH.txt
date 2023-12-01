@@ -1,0 +1,142 @@
+//@version=5
+//@strategy_alert_message {{strategy.order.alert_message}}
+
+// function
+get_in_trade(int start_time, int end_time, bool hide_trade_line = false) =>
+    allowedToTrade = (time>=start_time) and (time<=end_time)
+    if barstate.islastconfirmedhistory and not hide_trade_line
+        var myLine = line(na)
+        line.delete(myLine)
+        myLine := line.new(start_time, low, start_time, high, xloc=xloc.bar_time, color = color.rgb(255, 153, 0, 50), width = 3, extend = extend.both, style = line.style_dashed)
+    allowedToTrade
+
+// Setting
+start_time = input.time(timestamp("2023-07-16T00:00:00+09:00"), title="자동매매 시작")
+end_time = input.time(timestamp("3023-01-01T00:00:00+09:00"), title="자동매매 종료")
+
+in_trade = get_in_trade(start_time, end_time)
+bgcolor(in_trade ? color.rgb(83, 107, 173, 94) : na)
+
+strategy("MA_ETH", overlay=true, process_orders_on_close = true, initial_capital = 3000000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, overlay = true)
+
+ma_5 = ta.sma(close, 5)
+ma_10 = ta.sma(close, 10)
+ma_20 = ta.sma(close, 20)
+ma_30 = ta.sma(close, 30)
+
+rsi = ta.rsi(close, 14)
+
+longcond_1 = ta.crossover(close, ma_5) or ta.crossover(close, ma_10) or ta.crossover(close, ma_20) 
+
+// if in_trade //안에서 진입/종료 작성
+if true
+    if ma_5 < close and ma_10 < close and ma_20 < close and rsi < 70 and rsi[1] < rsi and longcond_1
+        strategy.entry('long', strategy.long, alert_message = '{"exchange": "upbit", "strategy": "ma_eth", "ticker": "KRW-ETH", "trade": "buy"}')
+
+
+    if close > ma_30
+        if ma_5 > close and ma_10 > close and ma_20 > close and rsi < 55
+            strategy.close('long', alert_message = '{"exchange": "upbit", "strategy": "ma_eth", "ticker": "KRW-ETH", "trade": "sell"}')
+
+    else
+        if ma_5 > close and rsi < 55
+            strategy.close('long', alert_message = '{"exchange": "upbit", "strategy": "ma_eth", "ticker": "KRW-ETH", "trade": "sell"}')
+    
+    strategy.exit('long exit', 'long', limit = strategy.position_avg_price * 1.8, alert_message = '{"exchange": "upbit", "strategy": "ma_eth", "ticker": "KRW-ETH", "trade": "sell"}')
+    
+    // if strategy.position_size > 0
+    //     stop_value = close * (1-long_trail_percent)
+    //     long_stop_price := math.max(stop_value, long_stop_price[1])
+    // if strategy.position_size <= 0
+    //     long_stop_price := 0.0
+
+    // if strategy.position_size > 0 //and strategy.position_avg_price * 1.1 < close
+    //     strategy.exit('long exit', 'long', stop = long_stop_price)
+        
+// plot(strategy.position_size > 0 ? long_stop_price : na, style = plot.style_linebr)
+
+//Table
+show_performance = input.bool(true, '', group='Profit Table', inline='t2')
+performance_text_size      = input.string(size.small, 'Size ', options=[size.tiny, size.small, size.normal], group='Profit Table', inline='t2')
+performance_table_position = input.string(position.bottom_right, 'Position ', options=[position.bottom_left, position.bottom_right, position.bottom_center, position.top_left, position.top_right, position.top_center], group='Profit Table', inline='t2')
+
+if show_performance
+    new_month = month(time) != month(time[1])
+    new_year  = year(time)  != year(time[1])
+    
+    eq = strategy.initial_capital + strategy.netprofit
+    
+    bar_pnl = eq / eq[1] - 1
+    
+    cur_month_pnl = 0.0
+    cur_year_pnl  = 0.0
+    
+    // Current Monthly P&L
+    cur_month_pnl := new_month ? 0.0 : 
+                     (1 + cur_month_pnl[1]) * (1 + bar_pnl) - 1 
+    
+    // Current Yearly P&L
+    cur_year_pnl := new_year ? 0.0 : 
+                     (1 + cur_year_pnl[1]) * (1 + bar_pnl) - 1  
+    
+    // Arrays to store Yearly and Monthly P&Ls
+    var month_pnl  = array.new_float(0)
+    var month_time = array.new_int(0)
+    
+    var year_pnl  = array.new_float(0)
+    var year_time = array.new_int(0)
+    
+    last_computed = false
+    
+    if (not na(cur_month_pnl[1]) and (new_month or barstate.islastconfirmedhistory))
+        if (last_computed[1])
+            array.pop(month_pnl)
+            array.pop(month_time)
+            
+        array.push(month_pnl , cur_month_pnl[1])
+        array.push(month_time, time[1])
+    
+    if (not na(cur_year_pnl[1]) and (new_year or barstate.islastconfirmedhistory))
+        if (last_computed[1])
+            array.pop(year_pnl)
+            array.pop(year_time)
+            
+        array.push(year_pnl , cur_year_pnl[1])
+        array.push(year_time, time[1])
+    
+    last_computed := barstate.islastconfirmedhistory ? true : nz(last_computed[1])
+    
+    // Monthly P&L Table    
+    var monthly_table = table(na)
+    
+    if (barstate.islastconfirmedhistory)
+        monthly_table := table.new(performance_table_position, columns = 14, rows = array.size(year_pnl) + 1, border_width = 1)
+    
+        table.cell(monthly_table, 0,  0, "", text_size=performance_text_size,     bgcolor = color.gray)
+        table.cell(monthly_table, 1,  0, "Jan", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 2,  0, "Feb", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 3,  0, "Mar", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 4,  0, "Apr", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 5,  0, "May", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 6,  0, "Jun", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 7,  0, "Jul", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 8,  0, "Aug", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 9,  0, "Sep", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 10, 0, "Oct", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 11, 0, "Nov", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 12, 0, "Dec", text_size=performance_text_size,  bgcolor = color.gray)
+        table.cell(monthly_table, 13, 0, "Year", text_size=performance_text_size, bgcolor = color.gray)
+    
+    
+        for yi = 0 to array.size(year_pnl) - 1
+            table.cell(monthly_table, 0,  yi + 1, str.tostring(year(array.get(year_time, yi))), text_size=performance_text_size, bgcolor = color.gray)
+            
+            y_color = array.get(year_pnl, yi) >= 0 ? color.new(color.teal, transp = 40) : color.new(color.gray, transp = 40)
+            table.cell(monthly_table, 13, yi + 1, str.tostring(math.round(array.get(year_pnl, yi) * 100, 1)), bgcolor = y_color, text_size=performance_text_size, text_color=color.new(color.white, 0))
+            
+        for mi = 0 to array.size(month_time) - 1
+            m_row   = year(array.get(month_time, mi))  - year(array.get(year_time, 0)) + 1
+            m_col   = month(array.get(month_time, mi)) 
+            m_color = array.get(month_pnl, mi) > 0 ? color.new(color.teal, transp = 40) : color.new(color.gray, transp = 40)
+            
+            table.cell(monthly_table, m_col, m_row, str.tostring(math.round(array.get(month_pnl, mi) * 100, 1)), bgcolor = m_color, text_size=performance_text_size, text_color=color.new(color.white, 0))
