@@ -12,6 +12,7 @@ pre_cendle = -2 # 이전 봉
 # 슬랙 api key
 slack = Slacker('xoxb-1531345263733-1758973047428-eai3FL8oeWNsk2sBBI5QTqy2')
 
+#업비트 api key
 api_key = 'K2s2e7KuWKEXxmgvGktqxr9CtOYQOGuCiYJ5x1Zg'
 api_secret = 'n24sxlFZB0PvdYQiBwbFI1XHKidypkUcehk5xtZ8'
 
