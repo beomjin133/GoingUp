@@ -13,6 +13,11 @@ os.system("sudo systemctl start mysqld")
 os.system("sudo dnf install -y httpd php")
 os.system("sudo systemctl start httpd")
 
+# crontab 설치
+os.system("sudo dnf install -y cronie")
+os.system("sudo systemctl start crond")
+os.system("sudo systemctl enable crond")
+
 # 권한 설정
 os.system("sudo chown -R ec2-user /var")
 os.system("sudo chmod 2775 /var")
@@ -21,4 +26,4 @@ os.system("sudo -u apache python3 /home/ec2-user/System-Trading/trading/read_ale
 os.system("sudo chmod 771 /var/lib/mysql")
 
 # php 파일 이동
-os.system("sudo cp /home/ec2-user/System-Trading/html/get_alert.php /var/www/html")
+os.system("sudo cp /home/ec2-user/System-Trading/html/alert.php /var/www/html")

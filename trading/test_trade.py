@@ -20,7 +20,7 @@ def dbgout(message):
 #ex) {"strategy": "heikinashi", "ticker": "KRW-XRP", "trade": "buy"}
 try:
     alert_data = json.loads(sys.argv[1])[0]
-    # dbgout('얼러트 신호 읽어오기 성공' + str(alert_data))
+    dbgout('얼러트 신호 읽어오기 성공' + str(alert_data))
 except Exception as ex:
     dbgout(str(ex))
     

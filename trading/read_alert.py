@@ -19,6 +19,6 @@ temp = sys.argv[1] # 임시저장
 alert_json = json.loads(temp) #alert_json 데이터
 alert = [temp] #alert 데이터
 
-os.system('python3 /home/ec2-user/System-Trading/trading/' + alert_json['strategy'] + '.py' + " " + str(alert))
+os.system('python3 /home/ec2-user/System-Trading/trading/' + alert_json['exchange'] + '_trade.py' + " " + str(alert))
 
 dbgout('read_alert 시간'+ str(time.time()-t))
