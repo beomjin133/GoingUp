@@ -1,6 +1,7 @@
 # 환경변수 (절대 커밋 금지)
 .env
 .env.*
+!.env.example
 
 # TOTP QR 코드 (시크릿 노출 위험)
 totp_qr.png
