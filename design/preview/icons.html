@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-sans);color:var(--gu-fg1)}
+.wrap{padding:22px}
+.section{margin-bottom:22px}
+.shead{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gu-fg3);font-weight:600;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px;border:1px solid var(--gu-border);border-radius:10px;background:#fff;transition:background 140ms}
+.cell:hover{background:var(--gu-bg-panel)}
+.cell img{width:28px;height:28px;color:var(--gu-fg1)}
+.cell .nm{font-size:10px;color:var(--gu-fg2);font-weight:500;text-align:center}
+.demo{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.demo-row{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--gu-bg-panel);border:1px solid var(--gu-border);border-radius:8px}
+.demo-row img{width:18px;height:18px}
+.demo-row.up img{color:var(--gu-up)}
+.demo-row.up{color:var(--gu-up-strong);background:var(--gu-up-bg);border-color:var(--gu-up-weak)}
+.demo-row.down img{color:var(--gu-down)}
+.demo-row.down{color:var(--gu-down-strong);background:var(--gu-down-bg);border-color:var(--gu-down-weak)}
+.demo-row.brand img{color:var(--gu-brand-primary)}
+.demo-row.brand{color:var(--gu-brand-primary);background:var(--gu-brand-primary-soft);border-color:var(--gu-brand-primary-soft)}
+.sizes{display:flex;align-items:flex-end;gap:20px;padding:10px 0}
+.sizes .s{display:flex;flex-direction:column;align-items:center;gap:6px}
+.sizes .s img{color:var(--gu-fg1)}
+.sizes .v{font-family:var(--gu-font-mono);font-size:10px;color:var(--gu-fg3)}
+</style></head><body>
+<div class="wrap">
+  <div class="section">
+    <div class="shead">GoingUp Icon Set · 17 symbols · 1.75 stroke · currentColor</div>
+    <div class="grid">
+      <div class="cell"><img src="../assets/icons/coin.svg?v=3"><div class="nm">coin · 코인</div></div>
+      <div class="cell"><img src="../assets/icons/stock.svg?v=3"><div class="nm">stock · 주식</div></div>
+      <div class="cell"><img src="../assets/icons/portfolio.svg?v=3"><div class="nm">portfolio</div></div>
+      <div class="cell"><img src="../assets/icons/wallet.svg?v=3"><div class="nm">wallet · 지갑</div></div>
+      <div class="cell"><img src="../assets/icons/deposit.svg?v=3"><div class="nm">deposit · 입금</div></div>
+      <div class="cell"><img src="../assets/icons/withdraw.svg?v=3"><div class="nm">withdraw · 출금</div></div>
+      <div class="cell"><img src="../assets/icons/swap.svg?v=3"><div class="nm">swap · 스왑</div></div>
+      <div class="cell"><img src="../assets/icons/rebalance.svg?v=3"><div class="nm">rebalance</div></div>
+      <div class="cell"><img src="../assets/icons/orderbook.svg?v=3"><div class="nm">orderbook</div></div>
+      <div class="cell"><img src="../assets/icons/chart.svg?v=3"><div class="nm">chart · 차트</div></div>
+      <div class="cell"><img src="../assets/icons/trending-up.svg?v=3"><div class="nm">trending-up</div></div>
+      <div class="cell"><img src="../assets/icons/trending-down.svg?v=3"><div class="nm">trending-down</div></div>
+      <div class="cell"><img src="../assets/icons/krw.svg?v=3"><div class="nm">krw · 원</div></div>
+      <div class="cell"><img src="../assets/icons/star.svg?v=3"><div class="nm">star · 관심</div></div>
+      <div class="cell"><img src="../assets/icons/bell.svg?v=3"><div class="nm">bell · 알림</div></div>
+      <div class="cell"><img src="../assets/icons/shield.svg?v=3"><div class="nm">shield · 보안</div></div>
+      <div class="cell"><img src="../assets/icons/x.svg"><div class="nm">x · 닫기</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="shead">In context · colored with currentColor</div>
+    <div class="demo">
+      <div class="demo-row up"><img src="../assets/icons/trending-up.svg?v=3"><span style="font-size:12px;font-weight:600">+2.54%</span></div>
+      <div class="demo-row down"><img src="../assets/icons/trending-down.svg?v=3"><span style="font-size:12px;font-weight:600">−0.94%</span></div>
+      <div class="demo-row brand"><img src="../assets/icons/coin.svg?v=3"><span style="font-size:12px;font-weight:600">코인</span></div>
+      <div class="demo-row brand"><img src="../assets/icons/stock.svg?v=3"><span style="font-size:12px;font-weight:600">주식</span></div>
+      <div class="demo-row"><img src="../assets/icons/deposit.svg?v=3" style="color:var(--gu-fg2)"><span style="font-size:12px;font-weight:500;color:var(--gu-fg2)">입금하기</span></div>
+      <div class="demo-row"><img src="../assets/icons/withdraw.svg?v=3" style="color:var(--gu-fg2)"><span style="font-size:12px;font-weight:500;color:var(--gu-fg2)">출금하기</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="shead">Sizes</div>
+    <div class="sizes">
+      <div class="s"><img src="../assets/icons/coin.svg?v=3" width="16" height="16"><div class="v">16</div></div>
+      <div class="s"><img src="../assets/icons/coin.svg?v=3" width="20" height="20"><div class="v">20</div></div>
+      <div class="s"><img src="../assets/icons/coin.svg?v=3" width="24" height="24"><div class="v">24</div></div>
+      <div class="s"><img src="../assets/icons/coin.svg?v=3" width="32" height="32"><div class="v">32</div></div>
+      <div class="s"><img src="../assets/icons/coin.svg?v=3" width="48" height="48"><div class="v">48</div></div>
+    </div>
+  </div>
+</div>
+</body></html>

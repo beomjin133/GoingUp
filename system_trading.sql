@@ -1,1 +1,0 @@
-SELECT * FROM system_trading.balance;

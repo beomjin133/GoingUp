@@ -1,0 +1,171 @@
+// Root App
+
+function App() {
+  const [holdings, setHoldings] = React.useState([]);
+  const [cashKRW, setCashKRW]   = React.useState(0);
+  const [loading, setLoading]   = React.useState(true);
+  const [error, setError]       = React.useState(null);
+
+  const systemTheme = () =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  const initial = {
+    tab: "dash",
+    selectedId: null,
+    hideAmounts: false,
+  };
+  const stored = (() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("gu-state") || "{}");
+      delete s.theme;
+      return s;
+    } catch { return {}; }
+  })();
+  const [state, setState] = React.useState({ ...initial, ...stored, theme: systemTheme() });
+
+  React.useEffect(() => {
+    localStorage.setItem("gu-state", JSON.stringify(state));
+    document.documentElement.setAttribute("data-theme", state.theme);
+  }, [state]);
+
+  React.useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e) => dispatch({ type: "set", key: "theme", value: e.matches ? 'dark' : 'light' });
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  function loadData() {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      fetch(`${API_BASE}/api/holdings`).then(r => r.json()),
+      fetch(`${API_BASE}/api/balance`).then(r => r.json()),
+    ]).then(([holdingsData, balanceData]) => {
+      if (holdingsData.length === 0) {
+        setHoldings([]);
+        setCashKRW(balanceData.krw);
+        setLoading(false);
+        return;
+      }
+      // price 없는 종목을 거래소별로 그룹화해서 /api/prices 요청
+      const priceGroups = {};
+      holdingsData.filter(h => h.price == null).forEach(h => {
+        if (!priceGroups[h.service]) priceGroups[h.service] = [];
+        priceGroups[h.service].push(h.ticker);
+      });
+
+      const fetchPrices = Object.keys(priceGroups).length > 0
+        ? fetch(`${API_BASE}/api/prices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(priceGroups),
+          }).then(r => r.json())
+        : Promise.resolve({});
+
+      return fetchPrices.then(priceData => {
+          holdingsData.forEach(h => {
+            if (h.price == null) {
+              const p = priceData[h.ticker] || { price: 0, daily_pct: 0 };
+              h.price     = p.price;
+              h.daily_pct = p.daily_pct;
+            }
+            h.avgPrice    = h.avg_price;
+            h.marketValue = h.amt * h.price;
+            h.costBasis   = h.amt * h.avg_price;
+            h.pl          = h.marketValue - h.costBasis;
+            h.plPct       = h.costBasis > 0 ? (h.pl / h.costBasis) * 100 : 0;
+          });
+          setHoldings(holdingsData);
+          setCashKRW(balanceData.krw);
+          if (!state.selectedId && holdingsData.length > 0) {
+            setState(s => ({ ...s, selectedId: holdingsData[0].id }));
+          }
+          setLoading(false);
+        });
+    }).catch(() => {
+      setError("데이터를 불러오지 못했습니다.");
+      setLoading(false);
+    });
+  }
+
+  function refreshPrices() {
+    setHoldings(prev => {
+      const cryptos = prev.filter(h => h.kind === 'crypto');
+      if (cryptos.length === 0) return prev;
+      const priceGroups = {};
+      cryptos.forEach(h => {
+        if (!priceGroups[h.service]) priceGroups[h.service] = [];
+        priceGroups[h.service].push(h.ticker);
+      });
+      fetch(`${API_BASE}/api/prices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(priceGroups),
+      })
+        .then(r => r.json())
+        .then(priceData => {
+          if (!priceData || typeof priceData !== 'object') return;
+          setHoldings(cur => cur.map(h => {
+            if (h.kind !== 'crypto') return h;
+            const p = priceData[h.ticker];
+            if (!p) return h;
+            const price = p.price;
+            const daily_pct = p.daily_pct;
+            const marketValue = h.amt * price;
+            const pl = marketValue - h.costBasis;
+            const plPct = h.costBasis > 0 ? (pl / h.costBasis) * 100 : 0;
+            return { ...h, price, daily_pct, marketValue, pl, plPct };
+          }));
+        });
+      return prev;
+    });
+  }
+
+  React.useEffect(() => { loadData(); }, []);
+
+  React.useEffect(() => {
+    if (holdings.length === 0) return;
+    const id = setInterval(refreshPrices, 5000);
+    return () => clearInterval(id);
+  }, [holdings.length]);
+
+  function dispatch(a) {
+    setState(s => {
+      if (a.type === "tab")      return { ...s, tab: a.tab };
+      if (a.type === "goDetail") return { ...s, tab: "detail", selectedId: a.id };
+      if (a.type === "set")      return { ...s, [a.key]: a.value };
+      return s;
+    });
+  }
+
+  if (loading) return (
+    <div style={{display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16, color:"var(--gu-fg3)"}}>
+      불러오는 중...
+    </div>
+  );
+
+  if (error) return (
+    <div style={{display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16, color:"var(--gu-down)"}}>
+      {error}
+    </div>
+  );
+
+  const data = { holdings, cashKRW };
+
+  return (
+    <div className="gu-app">
+      <Header
+        tab={state.tab} setTab={(t) => dispatch({type:"tab", tab:t})}
+        total={computeTotals(holdings, cashKRW).total}
+        hideAmounts={state.hideAmounts}
+      />
+      {state.tab === "dash"    && <Dashboard  state={state} dispatch={dispatch} data={data} onRefresh={loadData}/>}
+      {state.tab === "detail"  && <AssetDetail state={state} dispatch={dispatch} data={data} onRefresh={loadData}/>}
+      {state.tab === "history" && <History    state={state} dispatch={dispatch} holdings={holdings}/>}
+      {state.tab === "autobot" && <AutoBot    dispatch={dispatch}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);

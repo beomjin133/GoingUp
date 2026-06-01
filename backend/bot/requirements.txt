@@ -1,0 +1,6 @@
+pymysql
+python-dotenv
+pyupbit
+requests
+croniter
+pykrx

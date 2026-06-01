@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-mono);color:var(--gu-fg1);font-size:12px}
+.wrap{padding:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;background:#fff}
+.hd{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr 1fr;padding:6px 10px;font-family:var(--gu-font-sans);font-size:10px;color:var(--gu-fg3);text-transform:uppercase;letter-spacing:.04em;font-weight:600;border-bottom:1px solid #EAECEF}
+.hd>div:nth-child(2),.hd>div:nth-child(3){text-align:right}
+.row{display:contents}
+.row>div{padding:4px 10px;text-align:right;font-variant-numeric:tabular-nums;position:relative;z-index:1}
+.row>div:first-child{text-align:left;color:var(--gu-fg3)}
+.ask{color:var(--gu-up);font-weight:600}
+.bid{color:var(--gu-down);font-weight:600}
+.bar-ask{position:absolute;inset:0 0 0 auto;background:rgba(242,65,71,.10);z-index:0}
+.bar-bid{position:absolute;inset:0 0 0 auto;background:rgba(25,103,210,.10);z-index:0}
+.spread{grid-column:1/-1;padding:4px 10px;background:#F7F8FA;font-family:var(--gu-font-sans);font-size:10px;color:var(--gu-fg3);display:flex;justify-content:space-between}
+</style></head><body>
+<div class="wrap">
+<div class="grid">
+  <div class="hd"><div>가격(KRW)</div><div>수량(BTC)</div><div>누적</div></div>
+  <div class="row"><div style="position:relative"><span class="bar-ask" style="width:60%"></span><span style="position:relative" class="ask">94,218,000</span></div><div>0.0412</div><div>0.0412</div></div>
+  <div class="row"><div style="position:relative"><span class="bar-ask" style="width:40%"></span><span style="position:relative" class="ask">94,216,000</span></div><div>0.1820</div><div>0.2232</div></div>
+  <div class="row"><div style="position:relative"><span class="bar-ask" style="width:85%"></span><span style="position:relative" class="ask">94,214,000</span></div><div>0.8214</div><div>1.0446</div></div>
+  <div class="spread"><span>스프레드 · 2,000</span><span>KRW 94,213,000</span></div>
+  <div class="row"><div style="position:relative"><span class="bar-bid" style="width:72%"></span><span style="position:relative" class="bid">94,212,000</span></div><div>0.4120</div><div>0.4120</div></div>
+  <div class="row"><div style="position:relative"><span class="bar-bid" style="width:48%"></span><span style="position:relative" class="bid">94,210,000</span></div><div>0.2140</div><div>0.6260</div></div>
+  <div class="row"><div style="position:relative"><span class="bar-bid" style="width:30%"></span><span style="position:relative" class="bid">94,208,000</span></div><div>0.1040</div><div>0.7300</div></div>
+</div>
+</div>
+</body></html>

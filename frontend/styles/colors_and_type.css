@@ -1,0 +1,259 @@
+/* =============================================================
+   GoingUp Design System — colors_and_type.css
+   Tokens for the unified crypto + equities portfolio platform.
+   Color convention follows Korean market tradition:
+     RED (#F24147) = UP / gains / bullish / buy (상승 / 매수)
+     BLUE (#1967D2) = DOWN / losses / bearish / sell (하락 / 매도)
+   This is INVERTED from Western charting. Non-negotiable.
+   ============================================================= */
+
+/* ---------- Fonts ---------- */
+/* Pretendard is the de facto Korean product UI font. Served via the
+   Pretendard CDN to avoid shipping TTFs. If offline use is needed,
+   drop the OTFs into /fonts/ and update src below. */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+
+/* IBM Plex Mono is used for all numeric tickers, prices, volumes, and
+   balances — tabular figures and sharp zero make tight rows readable. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
+
+/* Space Grotesk is the display/marketing face (landing page hero,
+   big numerics in dashboards). It shares Pretendard's geometry but
+   has more presence at large sizes. */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
+
+:root {
+  /* ========== Brand ========== */
+  --gu-brand-primary: #1A55F0;      /* GoingUp signal blue — CTAs, links, focus. Distinct from "down" blue. */
+  --gu-brand-primary-hover: #0E44D5;
+  --gu-brand-primary-press: #0937B5;
+  --gu-brand-primary-soft: #E8EFFE; /* Tinted surface for brand callouts */
+  --gu-brand-accent: #FFB020;       /* Honey yellow — rare; used for featured/premium/starred. */
+
+  /* ========== Market direction (Korean convention) ========== */
+  --gu-up: #F24147;              /* 상승 — price up */
+  --gu-up-strong: #D92026;
+  --gu-up-weak: #FDE7E8;
+  --gu-up-bg: #FFF5F5;
+
+  --gu-down: #1967D2;            /* 하락 — price down */
+  --gu-down-strong: #0B4BAF;
+  --gu-down-weak: #E5EEFB;
+  --gu-down-bg: #F3F7FE;
+
+  --gu-flat: #6B7684;            /* Unchanged */
+
+  /* ========== Neutrals (light) ========== */
+  --gu-bg: #FFFFFF;
+  --gu-bg-alt: #F7F8FA;          /* Page sections, subtle bands */
+  --gu-bg-panel: #FBFCFD;        /* Data panels */
+  --gu-surface: #FFFFFF;
+  --gu-surface-hover: #F4F6F9;
+  --gu-surface-press: #EDF0F4;
+
+  --gu-border: #EAECEF;
+  --gu-border-strong: #D8DCE2;
+  --gu-divider: #F0F2F5;
+
+  --gu-fg1: #0F1419;             /* Primary text — near-black */
+  --gu-fg2: #454C56;             /* Secondary text */
+  --gu-fg3: #6B7684;             /* Tertiary — labels, meta */
+  --gu-fg4: #9AA4B0;             /* Quaternary — disabled, placeholders */
+  --gu-fg-on-brand: #FFFFFF;
+
+  /* ========== Semantic ========== */
+  --gu-success: #1DB954;
+  --gu-warning: #F59E0B;
+  --gu-danger: #E5484D;
+  --gu-info: #1A55F0;
+
+  /* ========== Chart palette ========== */
+  --gu-chart-1: #1A55F0;
+  --gu-chart-2: #F24147;
+  --gu-chart-3: #1DB954;
+  --gu-chart-4: #FFB020;
+  --gu-chart-5: #8B5CF6;
+  --gu-chart-6: #06B6D4;
+  --gu-chart-grid: #EEF0F3;
+
+  /* ========== Spacing (4px base) ========== */
+  --gu-s-1: 4px;
+  --gu-s-2: 8px;
+  --gu-s-3: 12px;
+  --gu-s-4: 16px;
+  --gu-s-5: 20px;
+  --gu-s-6: 24px;
+  --gu-s-8: 32px;
+  --gu-s-10: 40px;
+  --gu-s-12: 48px;
+  --gu-s-16: 64px;
+  --gu-s-20: 80px;
+
+  /* ========== Radius ========== */
+  --gu-r-xs: 4px;
+  --gu-r-sm: 6px;
+  --gu-r-md: 8px;
+  --gu-r-lg: 12px;
+  --gu-r-xl: 16px;
+  --gu-r-pill: 999px;
+
+  /* ========== Elevation ========== */
+  --gu-shadow-xs: 0 1px 2px rgba(15, 20, 25, 0.04);
+  --gu-shadow-sm: 0 2px 6px rgba(15, 20, 25, 0.06), 0 1px 2px rgba(15, 20, 25, 0.04);
+  --gu-shadow-md: 0 6px 16px rgba(15, 20, 25, 0.08), 0 2px 4px rgba(15, 20, 25, 0.04);
+  --gu-shadow-lg: 0 16px 40px rgba(15, 20, 25, 0.12), 0 4px 10px rgba(15, 20, 25, 0.06);
+  --gu-shadow-focus: 0 0 0 3px rgba(26, 85, 240, 0.25);
+
+  /* ========== Type ========== */
+  --gu-font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  --gu-font-display: "Space Grotesk", "Pretendard Variable", Pretendard, sans-serif;
+  --gu-font-mono: "IBM Plex Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Base sizes (dashboard density — slightly tighter than marketing) */
+  --gu-text-xs: 11px;   /* table meta, timestamps */
+  --gu-text-sm: 12px;   /* secondary rows */
+  --gu-text-base: 13px; /* default dashboard body */
+  --gu-text-md: 14px;   /* primary body */
+  --gu-text-lg: 16px;   /* emphasised body */
+  --gu-text-xl: 20px;   /* h4 / card title */
+  --gu-text-2xl: 24px;  /* h3 */
+  --gu-text-3xl: 32px;  /* h2 */
+  --gu-text-4xl: 44px;  /* h1 marketing */
+  --gu-text-5xl: 64px;  /* display */
+
+  /* Line height */
+  --gu-lh-tight: 1.15;
+  --gu-lh-snug: 1.3;
+  --gu-lh-normal: 1.5;
+  --gu-lh-relaxed: 1.65;
+
+  /* Weight */
+  --gu-fw-regular: 400;
+  --gu-fw-medium: 500;
+  --gu-fw-semibold: 600;
+  --gu-fw-bold: 700;
+
+  /* Motion */
+  --gu-dur-fast: 120ms;
+  --gu-dur-base: 180ms;
+  --gu-dur-slow: 280ms;
+  --gu-ease-std: cubic-bezier(0.2, 0, 0, 1);
+  --gu-ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --gu-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ========== Dark theme ========== */
+[data-theme="dark"] {
+  --gu-bg: #0B0D10;
+  --gu-bg-alt: #0F1216;
+  --gu-bg-panel: #14181D;
+  --gu-surface: #14181D;
+  --gu-surface-hover: #1B2026;
+  --gu-surface-press: #22282F;
+
+  --gu-border: #22272E;
+  --gu-border-strong: #2E353E;
+  --gu-divider: #1B2026;
+
+  --gu-fg1: #F2F4F7;
+  --gu-fg2: #BFC6CF;
+  --gu-fg3: #8B94A0;
+  --gu-fg4: #5E6773;
+
+  --gu-up-weak: #2A1518;
+  --gu-up-bg: #1A0F11;
+  --gu-down-weak: #0E1A2E;
+  --gu-down-bg: #0B1422;
+  --gu-brand-primary-soft: #0E1B3E;
+  --gu-chart-grid: #1F242B;
+
+  --gu-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.32);
+  --gu-shadow-md: 0 8px 20px rgba(0, 0, 0, 0.40);
+  --gu-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.50);
+}
+
+/* ========== Semantic type classes ========== */
+.gu-display {
+  font-family: var(--gu-font-display);
+  font-size: var(--gu-text-5xl);
+  line-height: var(--gu-lh-tight);
+  font-weight: var(--gu-fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--gu-fg1);
+}
+.gu-h1 {
+  font-family: var(--gu-font-display);
+  font-size: var(--gu-text-4xl);
+  line-height: var(--gu-lh-tight);
+  font-weight: var(--gu-fw-bold);
+  letter-spacing: -0.015em;
+  color: var(--gu-fg1);
+}
+.gu-h2 {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-3xl);
+  line-height: var(--gu-lh-snug);
+  font-weight: var(--gu-fw-bold);
+  letter-spacing: -0.01em;
+  color: var(--gu-fg1);
+}
+.gu-h3 {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-2xl);
+  line-height: var(--gu-lh-snug);
+  font-weight: var(--gu-fw-semibold);
+  letter-spacing: -0.005em;
+  color: var(--gu-fg1);
+}
+.gu-h4 {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-xl);
+  line-height: var(--gu-lh-snug);
+  font-weight: var(--gu-fw-semibold);
+  color: var(--gu-fg1);
+}
+.gu-body {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-md);
+  line-height: var(--gu-lh-relaxed);
+  font-weight: var(--gu-fw-regular);
+  color: var(--gu-fg2);
+}
+.gu-body-sm {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-sm);
+  line-height: var(--gu-lh-normal);
+  color: var(--gu-fg2);
+}
+.gu-label {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-xs);
+  font-weight: var(--gu-fw-medium);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gu-fg3);
+}
+.gu-caption {
+  font-family: var(--gu-font-sans);
+  font-size: var(--gu-text-xs);
+  color: var(--gu-fg3);
+}
+.gu-num {
+  font-family: var(--gu-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+.gu-num-lg {
+  font-family: var(--gu-font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-weight: var(--gu-fw-bold);
+  letter-spacing: -0.02em;
+}
+
+/* Helper: direction colors */
+.gu-up { color: var(--gu-up); }
+.gu-down { color: var(--gu-down); }
+.gu-flat { color: var(--gu-flat); }

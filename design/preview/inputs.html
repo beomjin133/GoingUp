@@ -1,0 +1,27 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-sans);color:var(--gu-fg1)}
+.wrap{padding:20px;display:flex;flex-direction:column;gap:10px;max-width:420px}
+.field{display:flex;flex-direction:column;gap:6px}
+.lbl{font-size:11px;color:var(--gu-fg3);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.input{height:40px;padding:0 12px;border:1px solid #D8DCE2;border-radius:8px;font-size:13px;font-family:inherit;color:#0F1419;background:#fff;outline:none}
+.input:focus{border-color:#1A55F0;box-shadow:0 0 0 3px rgba(26,85,240,.22)}
+.affix{display:flex;align-items:center;border:1px solid #D8DCE2;border-radius:8px;overflow:hidden;background:#fff}
+.affix .input{border:none;flex:1;box-shadow:none}
+.affix .suf{padding:0 12px;font-family:var(--gu-font-mono);font-size:12px;color:var(--gu-fg3);border-left:1px solid #EAECEF;height:40px;display:flex;align-items:center;background:#FBFCFD}
+.hint{font-size:11px;color:var(--gu-fg3)}
+.err{font-size:11px;color:var(--gu-up)}
+.err-input{border-color:var(--gu-up) !important;box-shadow:0 0 0 3px rgba(242,65,71,.18) !important}
+</style></head><body>
+<div class="wrap">
+  <div class="field"><div class="lbl">이메일 · Email</div><input class="input" value="trader@goingup.kr"/></div>
+  <div class="field"><div class="lbl">주문 수량 · Order Amount</div>
+    <div class="affix"><input class="input" value="0.0142"/><div class="suf">BTC</div></div>
+    <div class="hint">사용 가능 · 0.0418 BTC</div>
+  </div>
+  <div class="field"><div class="lbl">가격 · Price</div>
+    <input class="input err-input" value="94210000"/>
+    <div class="err">최소 단위는 1,000원입니다.</div>
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-sans);color:var(--gu-fg1)}
+.wrap{padding:22px}
+.note{font-size:11px;color:var(--gu-fg3);margin-bottom:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.group{border:1px solid var(--gu-border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px}
+.chip{width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:14px}
+.info{flex:1}
+.ttl{font-weight:600;font-size:13px}
+.hex{font-family:var(--gu-font-mono);font-size:11px;color:var(--gu-fg3)}
+.arrow{font-size:18px;font-weight:700}
+</style></head><body>
+<div class="wrap">
+  <div class="note">Korean market convention — red = up, blue = down</div>
+  <div class="row">
+    <div class="group" style="background:#FFF5F5">
+      <div class="chip" style="background:#F24147"><span class="arrow">▲</span></div>
+      <div class="info"><div class="ttl">상승 · Up / Bullish / Buy</div><div class="hex">#F24147  ·  on #FFF5F5</div></div>
+    </div>
+    <div class="group" style="background:#F3F7FE">
+      <div class="chip" style="background:#1967D2"><span class="arrow">▼</span></div>
+      <div class="info"><div class="ttl">하락 · Down / Bearish / Sell</div><div class="hex">#1967D2  ·  on #F3F7FE</div></div>
+    </div>
+  </div>
+</div>
+</body></html>

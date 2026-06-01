@@ -1,0 +1,31 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-sans);color:var(--gu-fg1)}
+.wrap{padding:22px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tag{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.t-up{background:#FFF5F5;color:#D92026}
+.t-dn{background:#F3F7FE;color:#0B4BAF}
+.t-new{background:#E8EFFE;color:#0937B5}
+.t-premium{background:#FFF4D6;color:#7A5000}
+.t-neutral{background:#F0F2F5;color:#454C56}
+.t-warn{background:#FEF4E2;color:#7A4400}
+.t-live{background:#1A55F0;color:#fff}
+.t-live::before{content:"";width:6px;height:6px;border-radius:999px;background:#fff;animation:blink 1.2s infinite}
+.pill{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;background:#F4F6F9;color:#454C56;border:1px solid #EAECEF}
+.pill.on{background:#0F1419;color:#fff;border-color:#0F1419}
+@keyframes blink{50%{opacity:.4}}
+</style></head><body>
+<div class="wrap">
+  <span class="tag t-up">▲ +2.54%</span>
+  <span class="tag t-dn">▼ −0.61%</span>
+  <span class="tag t-new">NEW 신규상장</span>
+  <span class="tag t-premium">⭐ PREMIUM</span>
+  <span class="tag t-warn">유의 종목</span>
+  <span class="tag t-neutral">KRW</span>
+  <span class="tag t-live">LIVE</span>
+  <span class="pill on">전체</span>
+  <span class="pill">원화</span>
+  <span class="pill">BTC</span>
+  <span class="pill">보유자산</span>
+</div>
+</body></html>

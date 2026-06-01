@@ -1,8 +1,0 @@
-# pip 설치
-sudo yum install python3-pip -y
-
-# 모듈 설치
-python3 /home/ec2-user/System-Trading/install.py
-
-# 서버 설정
-sudo python3 /home/ec2-user/System-Trading/setting_server.py

@@ -1,0 +1,35 @@
+# 환경변수 (절대 커밋 금지)
+.env
+.env.*
+
+# TOTP QR 코드 (시크릿 노출 위험)
+totp_qr.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+build/
+.venv/
+venv/
+env/
+
+# Node / React 빌드 결과물
+frontend/node_modules/
+frontend/dist/
+
+# Claude Code
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

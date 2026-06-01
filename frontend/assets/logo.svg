@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="240" height="60">
+  <defs>
+    <linearGradient id="guMark" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#0E44D5"></stop>
+      <stop offset="1" stop-color="#1A55F0"></stop>
+    </linearGradient>
+  </defs>
+  
+  <rect x="4" y="10" width="44" height="44" rx="10" fill="url(#guMark)"></rect>
+  <path d="M14 38 L22 30 L28 34 L38 22" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="38" cy="22" r="2.6" fill="#fff"></circle>
+  
+  <g font-family="Space Grotesk, Pretendard, sans-serif" font-weight="700" font-size="26" fill="#0F1419" letter-spacing="-0.5">
+    <text x="58" y="40">GoingUp</text>
+  </g>
+</svg>

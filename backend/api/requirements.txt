@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pymysql
+python-dotenv
+pyupbit
+requests
+apscheduler
+pykrx

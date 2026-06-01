@@ -1,0 +1,17 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-sans);color:var(--gu-fg1)}
+.wrap{padding:20px;display:flex;gap:18px;align-items:center}
+.logo-block{display:flex;align-items:center;gap:16px;padding:14px 18px;border:1px solid var(--gu-border);border-radius:12px;background:#fff;flex:1}
+.logo-block.dark{background:#0B0D10;border-color:#22272E}
+.logo-block.brand{background:linear-gradient(135deg,#1A55F0,#0937B5);border:none}
+img{height:36px;display:block}
+.lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gu-fg3);margin-left:auto;font-weight:500}
+.lbl.on-dark{color:#8B94A0}
+</style></head><body>
+<div class="wrap">
+  <div class="logo-block"><img src="../assets/logo.svg" alt=""><span class="lbl">Primary</span></div>
+  <div class="logo-block dark"><img src="../assets/logo-inverse.svg" alt=""><span class="lbl on-dark">On dark</span></div>
+  <div class="logo-block brand"><img src="../assets/logo-inverse.svg" alt=""><span class="lbl on-dark">On brand</span></div>
+</div>
+</body></html>

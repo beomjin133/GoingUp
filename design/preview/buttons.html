@@ -1,0 +1,31 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+html,body{margin:0;background:#fff;font-family:var(--gu-font-sans);color:var(--gu-fg1)}
+.wrap{padding:22px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.primary{background:#1A55F0;color:#fff}
+.primary:hover{background:#0E44D5}
+.secondary{background:#fff;color:#0F1419;border:1px solid #D8DCE2}
+.ghost{background:transparent;color:#1A55F0}
+.buy{background:#F24147;color:#fff}
+.sell{background:#1967D2;color:#fff}
+.sm{padding:6px 10px;font-size:12px}
+.lg{padding:14px 22px;font-size:15px;border-radius:10px}
+.disabled{opacity:.4;cursor:not-allowed}
+</style></head><body>
+<div class="wrap">
+  <div class="row">
+    <button class="btn primary">매수하기</button>
+    <button class="btn secondary">Secondary</button>
+    <button class="btn ghost">Ghost</button>
+    <button class="btn primary disabled">Disabled</button>
+  </div>
+  <div class="row">
+    <button class="btn buy">BUY · 매수</button>
+    <button class="btn sell">SELL · 매도</button>
+    <button class="btn primary sm">Small</button>
+    <button class="btn primary lg">Large CTA</button>
+  </div>
+</div>
+</body></html>
