@@ -4,15 +4,18 @@ import { fmt } from './data';
 
 export default function Header({ tab, setTab, total, hideAmounts }) {
   const tabs = [
-    { id: "dash", label: "대시보드" },
-    { id: "detail", label: "거래" },
-    { id: "history", label: "거래내역" },
-    { id: "autobot", label: "자동매매" },
+    { id: "dash",      label: "대시보드" },
+    { id: "detail",    label: "거래" },
+    { id: "history",   label: "거래내역" },
+    { id: "autobot",   label: "자동매매" },
+    { id: "backtest",  label: "백테스트" },
   ];
   return (
     <header className="gu-header">
       <div className="gu-header-left">
-        <Logo size={22} />
+        <div onClick={() => setTab("dash")} style={{cursor:"pointer"}}>
+          <Logo size={22} />
+        </div>
         <nav className="gu-topnav">
           {tabs.map(t => (
             <button key={t.id}

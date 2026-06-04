@@ -3,6 +3,7 @@ import sys
 import time
 import threading
 import base64
+import importlib
 import requests as req
 from datetime import date, timedelta
 from io import BytesIO
@@ -576,6 +577,320 @@ def delete_strategy(strategy_id: int):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM strategies WHERE id = %s", (strategy_id,))
     return {"ok": True}
+
+
+# ── 백테스트 ─────────────────────────────────────────────
+
+from script_runner import SCRIPT_TEMPLATE
+
+@app.get("/api/backtest/strategy/{service}/{name}")
+def load_strategy_code(service: str, name: str):
+    path = os.path.join(os.path.dirname(__file__), '..', 'bot', 'strategies',
+                        service.lower(), f'{name}.py')
+    if not os.path.exists(path):
+        return {"code": SCRIPT_TEMPLATE}
+    with open(path, encoding='utf-8') as f:
+        return {"code": f.read()}
+
+@app.post("/api/backtest/strategy")
+async def save_strategy_code(request: Request):
+    import re
+    body = await request.json()
+    service = body.get("service", "upbit")
+    name    = body.get("name", "").strip()
+    code    = body.get("code", "")
+
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "전략 이름을 입력하세요"})
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+        return JSONResponse(status_code=400, content={"error": "이름은 영문/숫자/언더스코어만 사용 가능합니다"})
+
+    path = os.path.join(os.path.dirname(__file__), '..', 'bot', 'strategies',
+                        service.lower(), f'{name}.py')
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(code)
+
+    # 모듈 캐시 제거 (재로드용)
+    key = f"strategies.{service.lower()}.{name}"
+    sys.modules.pop(key, None)
+
+    return {"ok": True, "name": name}
+
+@app.get("/api/backtest/params/{service}/{strategy}")
+def get_backtest_params(service: str, strategy: str):
+    try:
+        path = os.path.join(os.path.dirname(__file__), '..', 'bot',
+                            'strategies', service.lower(), f'{strategy}.py')
+        with open(path, encoding='utf-8') as f:
+            code = f.read()
+
+        if 'class BacktestStrategy' in code:
+            key = f"strategies.{service.lower()}.{strategy}"
+            sys.modules.pop(key, None)
+            mod = importlib.import_module(key)
+            cls = getattr(mod, 'BacktestStrategy', None)
+            if not cls:
+                return {}
+            import inspect
+            return {
+                k: v for k, v in vars(cls).items()
+                if not k.startswith('_') and not inspect.isfunction(v)
+                and not inspect.ismethod(v) and k not in ('broker', 'data', 'equity')
+                and isinstance(v, (int, float, str, bool))
+            }
+        else:
+            from script_runner import compile_script
+            cls = compile_script(code)
+            return cls._user_params
+    except Exception:
+        return {}
+
+@app.post("/api/backtest")
+async def run_backtest(request: Request):
+    import pyupbit
+    import pandas as pd
+    from backtesting import Backtest
+    from backtesting.lib import FractionalBacktest
+    from datetime import datetime
+    import math
+
+    body = await request.json()
+    service  = body.get("service", "upbit")
+    strategy = body.get("strategy")
+    ticker   = body.get("ticker", "BTC")
+    start    = body.get("start")
+    end      = body.get("end")
+    cash       = float(body.get("cash", 1_000_000))
+    interval   = body.get("interval", "day")
+    commission = float(body.get("commission", 0.05)) / 100
+    slippage   = float(body.get("slippage", 0.0)) / 100
+    params     = body.get("params", {})
+
+    # OHLCV 조회
+    try:
+        days = 0
+        if start:
+            days = (datetime.now() - datetime.strptime(start, '%Y-%m-%d')).days + 10
+        multipliers = {
+            'day': 1, 'week': 1/7, 'month': 1/30,
+            'minute240': 6, 'minute60': 24, 'minute30': 48,
+            'minute15': 96, 'minute10': 144, 'minute5': 288,
+            'minute3': 480, 'minute1': 1440,
+        }
+        m = multipliers.get(interval, 1)
+        count = min(max(int(days * m) if days else 500, 60), 500)
+        df = pyupbit.get_ohlcv(f"KRW-{ticker}", interval=interval, count=count)
+        if df is None or df.empty:
+            return JSONResponse(status_code=400, content={"error": "데이터 조회 실패"})
+        df = df[['open', 'high', 'low', 'close', 'volume']].copy()
+        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if start:
+            df = df[df.index >= pd.Timestamp(start)]
+        if end:
+            df = df[df.index <= pd.Timestamp(end) + pd.Timedelta(days=1)]
+        if len(df) < 10:
+            return JSONResponse(status_code=400, content={"error": f"데이터 부족 ({len(df)}일)"})
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": f"데이터 오류: {e}"})
+
+    # 전략 로드 (항상 최신 파일로 재로드)
+    try:
+        strategy_path = os.path.join(os.path.dirname(__file__), '..', 'bot',
+                                     'strategies', service.lower(), f'{strategy}.py')
+        with open(strategy_path, encoding='utf-8') as f:
+            code = f.read()
+
+        # 스크립트 형식 vs 클래스 형식 자동 감지
+        if 'class BacktestStrategy' in code:
+            key = f"strategies.{service.lower()}.{strategy}"
+            sys.modules.pop(key, None)
+            mod = importlib.import_module(key)
+            StratClass = type('_S', (mod.BacktestStrategy,), {})
+            for k, v in params.items():
+                if hasattr(mod.BacktestStrategy, k):
+                    setattr(StratClass, k, type(getattr(mod.BacktestStrategy, k))(v))
+        else:
+            from script_runner import compile_script
+            StratClass = compile_script(code)
+            for k, v in params.items():
+                if hasattr(StratClass, k):
+                    setattr(StratClass, k, type(getattr(StratClass, k))(v))
+    except FileNotFoundError:
+        return JSONResponse(status_code=400, content={"error": f"전략 파일을 찾을 수 없습니다: {strategy}"})
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": f"전략 로드 실패: {e}"})
+
+    # 백테스트 실행
+    try:
+        bt     = FractionalBacktest(df, StratClass, cash=cash, commission=commission + slippage, exclusive_orders=True, finalize_trades=True)
+        stats  = bt.run()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=400, content={"error": f"백테스트 실패: {e}"})
+
+    def sf(v, d=0):
+        try:
+            f = float(v)
+            return d if math.isnan(f) or math.isinf(f) else round(f, 2)
+        except Exception:
+            return d
+
+    # 지표 시계열: df['Close']에서 직접 재계산 (배열 인덱싱 문제 회피)
+    OVERLAY = {'SMA', 'EMA', 'BB_U', 'BB_M', 'BB_L'}
+    indicators = {}
+    try:
+        from script_runner import _sma, _ema, _rsi, _bb_upper, _bb_mid, _bb_lower, _supertrend
+        snapshot = getattr(StratClass, '_ind_snapshot', {})
+        close_np = df['Close'].to_numpy(dtype=float)
+        high_np  = df['High'].to_numpy(dtype=float)
+        low_np   = df['Low'].to_numpy(dtype=float)
+        time_fmt = "%Y-%m-%d %H:%M:%S" if interval.startswith("minute") else "%Y-%m-%d"
+        times    = [ts.strftime(time_fmt) for ts in df.index]
+
+        def build_pts(arr, is_overlay):
+            pts = []
+            for i, t_str in enumerate(times):
+                if i >= len(arr): break
+                try:
+                    fv = float(arr[i])
+                    if not (math.isnan(fv) or math.isinf(fv)):
+                        pts.append({"time": t_str,
+                                    "value": round(fv) if is_overlay else round(fv, 2)})
+                except Exception:
+                    pass
+            return pts
+
+        for key in snapshot.keys():
+            t = key[0]
+            try:
+                if t == 'SMA':
+                    arr = _sma(close_np, key[1]).to_numpy()
+                    label, ovl = f"SMA({key[1]})", True
+                elif t == 'EMA':
+                    arr = _ema(close_np, key[1]).to_numpy()
+                    label, ovl = f"EMA({key[1]})", True
+                elif t == 'RSI':
+                    arr = _rsi(close_np, key[1]).to_numpy()
+                    label, ovl = f"RSI({key[1]})", False
+                elif t == 'BB_U':
+                    arr = _bb_upper(close_np, key[1], key[2]).to_numpy()
+                    label, ovl = f"BB상단({key[1]})", True
+                elif t == 'BB_M':
+                    arr = _bb_mid(close_np, key[1]).to_numpy()
+                    label, ovl = f"BB중간({key[1]})", True
+                elif t == 'BB_L':
+                    arr = _bb_lower(close_np, key[1], key[2]).to_numpy()
+                    label, ovl = f"BB하단({key[1]})", True
+                elif t == 'SUPERT_LINE':
+                    line_s, dir_s = _supertrend(high_np, low_np, close_np, key[1], key[2])
+                    line_arr = line_s.to_numpy()
+                    dir_arr  = dir_s.to_numpy()
+                    label = f"SUPERT({key[1]},{key[2]})"
+                    st_pts = []
+                    for i, t_str in enumerate(times):
+                        if i >= len(line_arr): break
+                        try:
+                            fv = float(line_arr[i]); dv = float(dir_arr[i])
+                            if not (math.isnan(fv) or math.isinf(fv)) and not math.isnan(dv):
+                                st_pts.append({"time": t_str, "value": round(fv),
+                                               "color": '#22c55e' if dv > 0 else '#ef4444'})
+                        except Exception:
+                            pass
+                    if st_pts:
+                        indicators[label] = {"data": st_pts, "overlay": True, "type": "SUPERT_LINE"}
+                    continue
+                elif t == 'SUPERT_DIR':
+                    continue
+                else:
+                    continue
+            except Exception:
+                continue
+            pts = build_pts(arr, ovl)
+            if pts:
+                indicators[label] = {"data": pts, "overlay": ovl, "type": t}
+    except Exception as e:
+        print(f"[indicators] {e}")
+        import traceback; traceback.print_exc()
+
+    # 수익 곡선
+    is_minute = interval.startswith("minute")
+    ts_fmt = "%Y-%m-%d %H:%M:%S" if is_minute else "%Y-%m-%d"
+    ts_len = 19 if is_minute else 10
+    equity = stats['_equity_curve']['Equity']
+    equity_data = [
+        {"time": t.strftime(ts_fmt), "value": round(float(v))}
+        for t, v in equity.items()
+    ]
+
+    # 거래 내역
+    last_date = df.index[-1].strftime(ts_fmt)
+    trades = []
+    for _, t in stats['_trades'].iterrows():
+        exit_time = str(t.ExitTime)[:ts_len] if not pd.isna(t.ExitTime) else last_date
+        exit_price = round(float(t.ExitPrice)) if not pd.isna(t.ExitPrice) else round(float(df['Close'].iloc[-1]))
+        trades.append({
+            "entry_time":  str(t.EntryTime)[:ts_len],
+            "exit_time":   exit_time,
+            "entry_price": round(float(t.EntryPrice)),
+            "exit_price":  exit_price,
+            "size":        round(float(t.Size), 6),
+            "pnl":         round(float(t.PnL)) if not pd.isna(t.PnL) else 0,
+            "pnl_pct":     round(float(t.ReturnPct) * 100, 2) if not pd.isna(t.ReturnPct) else 0,
+            "open":        pd.isna(t.ExitTime),
+        })
+
+    ohlcv_data = [
+        {
+            "time":  t.strftime(ts_fmt),
+            "open":  round(float(row.Open)),
+            "high":  round(float(row.High)),
+            "low":   round(float(row.Low)),
+            "close": round(float(row.Close)),
+        }
+        for t, row in df.iterrows()
+    ]
+
+    # 월별 수익률
+    monthly_returns = {}
+    try:
+        eq_idx = pd.to_datetime([e['time'] for e in equity_data])
+        eq_s = pd.Series([float(e['value']) for e in equity_data], index=eq_idx)
+        try:
+            monthly_end = eq_s.resample('ME').last()
+        except Exception:
+            monthly_end = eq_s.resample('M').last()
+        prev = float(cash)
+        for dt, val in monthly_end.dropna().items():
+            yr, mo = int(dt.year), int(dt.month)
+            ret = round((val / prev - 1) * 100, 1) if prev else 0.0
+            if yr not in monthly_returns:
+                monthly_returns[yr] = {}
+            monthly_returns[yr][mo] = ret
+            prev = val
+    except Exception:
+        monthly_returns = {}
+
+    return {
+        "stats": {
+            "return_pct":        sf(stats["Return [%]"]),
+            "annual_return_pct": sf(stats.get("Return (Ann.) [%]", 0)),
+            "max_drawdown_pct":  sf(stats["Max. Drawdown [%]"]),
+            "win_rate":          sf(stats.get("Win Rate [%]", 0)),
+            "num_trades":        int(stats["# Trades"]),
+            "sharpe_ratio":      sf(stats.get("Sharpe Ratio", 0)),
+        },
+        "ohlcv":           ohlcv_data,
+        "equity_curve":    equity_data,
+        "trades":          trades,
+        "monthly_returns": monthly_returns,
+        "indicators":      indicators,
+        "config": {
+            "interval":   interval,
+            "commission":  round(commission * 100, 4),
+            "slippage":    round(slippage * 100, 4),
+        },
+    }
 
 
 # ── 거래소별 현재가 조회 ──────────────────────────────────

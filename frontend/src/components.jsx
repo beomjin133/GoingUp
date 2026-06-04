@@ -2,7 +2,7 @@ import React from 'react';
 
 export function Logo({ size = 22 }) {
   return (
-    <svg height={size} viewBox="0 0 120 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg height={size} width={size * (120 / 28)} viewBox="0 0 120 28" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect width="28" height="28" rx="7" fill="url(#gu-lg)"/>
       <path d="M8 19L13 13L16 16L21 9" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M17 9H21V13" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>

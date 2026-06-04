@@ -173,8 +173,17 @@ def run():
                 continue
 
             print(f"  전략 파일 로드: strategies/{s['service'].lower()}/{s['strategy']}.py")
-            mod    = importlib.import_module(f"strategies.{s['service'].lower()}.{s['strategy']}")
-            signal = mod.run(s['ticker'], adapter, s['amount'], s['params'] or {})
+            mod = importlib.import_module(f"strategies.{s['service'].lower()}.{s['strategy']}")
+            if hasattr(mod, 'run'):
+                signal = mod.run(s['ticker'], adapter, s['amount'], s['params'] or {})
+            else:
+                # DSL 스크립트 — live_run으로 직접 실행
+                import inspect
+                from script_runner import live_run
+                source_file = inspect.getfile(mod)
+                with open(source_file, encoding='utf-8') as _f:
+                    script_code = _f.read()
+                signal = live_run(script_code, s['ticker'], adapter)
             print(f"  시그널: {signal}")
 
             execute_signal(signal, s, adapter)
