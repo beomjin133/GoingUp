@@ -180,6 +180,7 @@ export default function App() {
         tab={state.tab} setTab={(t) => dispatch({type:"tab", tab:t})}
         total={computeTotals(holdings, cashKRW).total}
         hideAmounts={state.hideAmounts}
+        onToggleHide={() => dispatch({type:"set", key:"hideAmounts", value: !state.hideAmounts})}
       />
       {state.tab === "dash"    && <Dashboard  state={state} dispatch={dispatch} data={data} onRefresh={() => { loadData(); setTxRefreshKey(k => k + 1); }}/>}
       {state.tab === "detail"  && <AssetDetail state={state} dispatch={dispatch} data={data} onRefresh={() => { loadData(); setTxRefreshKey(k => k + 1); }}/>}

@@ -563,7 +563,7 @@ html, body { margin: 0; padding: 0; background: var(--gu-bg-alt); }
 }
 .gu-switch.is-on::after { transform: translateX(14px); }
 
-.gu-blur-amt { filter: blur(6px); transition: filter 180ms; }
+.gu-blur-amt { filter: blur(10px); transition: filter 180ms; user-select: none; }
 
 /* ---------- Experimental variant flourishes ---------- */
 [data-variant="experimental"] .gu-hero-main {

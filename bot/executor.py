@@ -2,15 +2,16 @@ import sys
 import os
 import json as _json
 import importlib
+import importlib.util
 from datetime import datetime
 from croniter import croniter
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend', 'bot'))
 
 from database import get_conn
 from exchanges import ADAPTERS
-from script_runner import live_run
 
 
 def load_adapter_map():
@@ -36,12 +37,10 @@ def load_adapter_map():
             print(f"  ✗ {service} (미등록 거래소)")
     return adapter_map
 
-
 def should_run(cron_expr, last_run):
     now = datetime.now()
     base = last_run if last_run else datetime(now.year, now.month, now.day, 0, 0, 0)
     return croniter(cron_expr, base).get_next(datetime) <= now
-
 
 def execute_signal(signal, strategy_row, adapter):
     ticker = strategy_row['ticker']
@@ -174,24 +173,24 @@ def run():
                 print(f"  오류: 어댑터 없음")
                 continue
 
-            strategy_dir = os.path.join(os.path.dirname(__file__), 'strategies',
-                                        s['service'].lower())
-            strategy_file = os.path.join(strategy_dir, f"{s['strategy']}.py")
+            mod_name = f"strategies.{s['service'].lower()}.{s['strategy']}"
+            spec = importlib.util.find_spec(mod_name)
+            if not spec or not spec.origin:
+                raise FileNotFoundError(f"전략 파일을 찾을 수 없음: {mod_name}")
+
+            strategy_file = spec.origin
             print(f"  전략 파일 로드: {strategy_file}")
 
-            # run() 함수가 있는 일반 모듈인지 확인 (import 전에 코드를 읽어서 판단)
             with open(strategy_file, encoding='utf-8') as _f:
                 script_code = _f.read()
 
             if 'def run(' in script_code:
-                # 일반 모듈 — import해서 run() 실행
-                mod = importlib.import_module(f"strategies.{s['service'].lower()}.{s['strategy']}")
+                mod = importlib.import_module(mod_name)
                 importlib.reload(mod)
                 signal = mod.run(s['ticker'], adapter, s['amount'], s['params'] or {})
             else:
-                # DSL 스크립트 — live_run으로 직접 실행
+                from script_runner import live_run
 
-                # lots 테이블 기준 포지션 확인
                 with get_conn() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -202,7 +201,6 @@ def run():
                         lot_row = cur.fetchone()
                 position = float(lot_row['qty'] or 0) > 0 if lot_row else False
 
-                # mem 상태 로드
                 with get_conn() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -215,7 +213,6 @@ def run():
                 signal = live_run(script_code, s['ticker'], adapter,
                                   position=position, mem_state=mem_state)
 
-                # mem 상태 저장
                 new_state = signal.get('mem_state', {})
                 if new_state:
                     try:
@@ -231,7 +228,6 @@ def run():
                                     )
                     except Exception as e:
                         print(f"  mem 상태 저장 실패: {e}")
-
             print(f"  시그널: {signal}")
 
             execute_signal(signal, s, adapter)

@@ -84,10 +84,11 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
               {isUp ? "▲" : "▼"} {fmtPct(dayPct)}
             </span>
             <span className={isUp ? "gu-up" : "gu-down"}>
-              {fmtSigned(dayDelta)} <span style={{color: "var(--gu-fg3)", fontWeight: 400}}>오늘</span>
+              <span className={hidden ? "gu-blur-amt" : ""}>{fmtSigned(dayDelta)}</span>
+              {' '}<span style={{color: "var(--gu-fg3)", fontWeight: 400}}>오늘</span>
             </span>
             <span style={{color: "var(--gu-fg3)", fontWeight: 500, fontSize: 12}}>
-              총 수익 <span className={totalPL >= 0 ? "gu-up" : "gu-down"}>
+              총 수익 <span className={(totalPL >= 0 ? "gu-up" : "gu-down") + (hidden ? " gu-blur-amt" : "")}>
                 {fmtSigned(totalPL)} ({fmtPct(totalPLPct)})
               </span>
             </span>
@@ -422,7 +423,7 @@ function HoldingsTable({ state, dispatch, holdings, cashKRW, onRefresh }) {
                   <td className={hidden ? "gu-blur-amt" : ""}>{fmt(h.marketValue)}</td>
                   <td className={"gu-pl-td " + (isUp ? "is-up gu-up" : "is-down gu-down")}>
                     <div className="gu-pl-cell">
-                      <span className="gu-pl-abs">{fmtSigned(h.pl)}</span>
+                      <span className={"gu-pl-abs" + (hidden ? " gu-blur-amt" : "")}>{fmtSigned(h.pl)}</span>
                       <span className="gu-pl-pct">{fmtPct(h.plPct)}</span>
                     </div>
                   </td>

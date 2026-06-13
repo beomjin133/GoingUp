@@ -5,12 +5,14 @@ import threading
 import base64
 import importlib
 import requests as req
+from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from io import BytesIO
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 import pyotp
 import qrcode
 
@@ -24,7 +26,32 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 ALLOWED_IPS = os.getenv("ALLOWED_IPS", "").split(",")
 
-app = FastAPI()
+def _job_executor():
+    try:
+        import executor
+        executor.run()
+    except Exception as e:
+        print(f"[scheduler] executor 오류: {e}")
+
+def _job_snapshot():
+    try:
+        take_snapshot()
+    except Exception as e:
+        print(f"[scheduler] snapshot 오류: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = BackgroundScheduler(timezone='Asia/Seoul')
+    scheduler.add_job(_job_executor, 'interval', minutes=1, id='executor',
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(_job_snapshot, 'cron', hour=9, minute=0, id='snapshot')
+    scheduler.start()
+    print("[scheduler] 시작 — executor(매분), snapshot(매일 09:00)")
+    yield
+    scheduler.shutdown(wait=False)
+    print("[scheduler] 종료")
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -216,26 +243,6 @@ def take_snapshot():
     print(f"[snapshot] {snapshot_date} 저장 완료: {round(total):,}원")
 
 
-def run_strategies():
-    import importlib
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM strategies WHERE enabled = 1")
-            rows = cur.fetchall()
-
-    adapter_map = {a.service.lower(): a for a in get_adapters()}
-
-    for s in rows:
-        try:
-            mod     = importlib.import_module(f"strategies.{s['service'].lower()}.{s['strategy']}")
-            adapter = adapter_map.get(s['service'].lower())
-            if not adapter:
-                print(f"[{s['service']}/{s['strategy']}] 어댑터 없음")
-                continue
-            result = mod.run(s['ticker'], adapter, s['amount'], s['params'] or {})
-            print(f"[{s['service']}/{s['strategy']}] {result}")
-        except Exception as e:
-            print(f"[{s['service']}/{s['strategy']}] 오류: {e}")
 
 
 
@@ -547,7 +554,10 @@ def create_strategy(body: dict):
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO strategies (strategy, ticker, service, amount, enabled, cron, params) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE "
+                "amount = VALUES(amount), enabled = VALUES(enabled), "
+                "cron = VALUES(cron), params = VALUES(params)",
                 (body["strategy"], body["ticker"], body["service"],
                  body["amount"], body.get("enabled", 0),
                  body.get("cron", "* * * * *"),
@@ -668,26 +678,26 @@ async def run_backtest(request: Request):
 
     # OHLCV 조회
     try:
-        days = 0
+        ticker_full = f"KRW-{ticker}"
+        to_dt = (datetime.strptime(end, '%Y-%m-%d') + pd.Timedelta(days=1)) if end else None
+
         if start:
-            days = (datetime.now() - datetime.strptime(start, '%Y-%m-%d')).days + 10
-        multipliers = {
-            'day': 1, 'week': 1/7, 'month': 1/30,
-            'minute240': 6, 'minute60': 24, 'minute30': 48,
-            'minute15': 96, 'minute10': 144, 'minute5': 288,
-            'minute3': 480, 'minute1': 1440,
-        }
-        m = multipliers.get(interval, 1)
-        count = min(max(int(days * m) if days else 500, 60), 500)
-        df = pyupbit.get_ohlcv(f"KRW-{ticker}", interval=interval, count=count)
+            from_dt = datetime.strptime(start, '%Y-%m-%d')
+            df = pyupbit.get_ohlcv_from(
+                ticker_full, interval=interval,
+                fromDatetime=from_dt,
+                to=to_dt.strftime('%Y%m%d') if to_dt else None,
+                period=0.1,
+            )
+        else:
+            # 시작일 없음 → 최대 200봉 (get_ohlcv 한계)
+            df = pyupbit.get_ohlcv(ticker_full, interval=interval, count=200,
+                                   to=to_dt.strftime('%Y%m%d %H%M%S') if to_dt else None)
+
         if df is None or df.empty:
             return JSONResponse(status_code=400, content={"error": "데이터 조회 실패"})
         df = df[['open', 'high', 'low', 'close', 'volume']].copy()
         df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        if start:
-            df = df[df.index >= pd.Timestamp(start)]
-        if end:
-            df = df[df.index <= pd.Timestamp(end) + pd.Timedelta(days=1)]
         if len(df) < 10:
             return JSONResponse(status_code=400, content={"error": f"데이터 부족 ({len(df)}일)"})
     except Exception as e:
@@ -722,6 +732,7 @@ async def run_backtest(request: Request):
 
     # 백테스트 실행
     try:
+        StratClass._date_index = [dt.strftime("%Y-%m-%d") for dt in df.index]
         bt     = FractionalBacktest(df, StratClass, cash=cash, commission=commission + slippage, exclusive_orders=True, finalize_trades=True)
         stats  = bt.run()
     except Exception as e:
@@ -736,15 +747,9 @@ async def run_backtest(request: Request):
         except Exception:
             return d
 
-    # 지표 시계열: df['Close']에서 직접 재계산 (배열 인덱싱 문제 회피)
-    OVERLAY = {'SMA', 'EMA', 'BB_U', 'BB_M', 'BB_L'}
+    # 지표 시계열
     indicators = {}
     try:
-        from script_runner import _sma, _ema, _rsi, _bb_upper, _bb_mid, _bb_lower, _supertrend
-        snapshot = getattr(StratClass, '_ind_snapshot', {})
-        close_np = df['Close'].to_numpy(dtype=float)
-        high_np  = df['High'].to_numpy(dtype=float)
-        low_np   = df['Low'].to_numpy(dtype=float)
         time_fmt = "%Y-%m-%d %H:%M:%S" if interval.startswith("minute") else "%Y-%m-%d"
         times    = [ts.strftime(time_fmt) for ts in df.index]
 
@@ -761,54 +766,137 @@ async def run_backtest(request: Request):
                     pass
             return pts
 
-        for key in snapshot.keys():
-            t = key[0]
-            try:
-                if t == 'SMA':
-                    arr = _sma(close_np, key[1]).to_numpy()
-                    label, ovl = f"SMA({key[1]})", True
-                elif t == 'EMA':
-                    arr = _ema(close_np, key[1]).to_numpy()
-                    label, ovl = f"EMA({key[1]})", True
-                elif t == 'RSI':
-                    arr = _rsi(close_np, key[1]).to_numpy()
-                    label, ovl = f"RSI({key[1]})", False
-                elif t == 'BB_U':
-                    arr = _bb_upper(close_np, key[1], key[2]).to_numpy()
-                    label, ovl = f"BB상단({key[1]})", True
-                elif t == 'BB_M':
-                    arr = _bb_mid(close_np, key[1]).to_numpy()
-                    label, ovl = f"BB중간({key[1]})", True
-                elif t == 'BB_L':
-                    arr = _bb_lower(close_np, key[1], key[2]).to_numpy()
-                    label, ovl = f"BB하단({key[1]})", True
-                elif t == 'SUPERT_LINE':
-                    line_s, dir_s = _supertrend(high_np, low_np, close_np, key[1], key[2])
-                    line_arr = line_s.to_numpy()
-                    dir_arr  = dir_s.to_numpy()
-                    label = f"SUPERT({key[1]},{key[2]})"
-                    st_pts = []
-                    for i, t_str in enumerate(times):
-                        if i >= len(line_arr): break
-                        try:
-                            fv = float(line_arr[i]); dv = float(dir_arr[i])
-                            if not (math.isnan(fv) or math.isinf(fv)) and not math.isnan(dv):
-                                st_pts.append({"time": t_str, "value": round(fv),
-                                               "color": '#22c55e' if dv > 0 else '#ef4444'})
-                        except Exception:
-                            pass
-                    if st_pts:
-                        indicators[label] = {"data": st_pts, "overlay": True, "type": "SUPERT_LINE"}
+        plt_calls = getattr(StratClass, '_plt_calls', [])
+
+        if plt_calls:
+            # plt() 호출 기반 — 사용자가 명시적으로 선택한 지표만 그림
+            from script_runner import (_sma, _ema, _rsi, _bb_upper, _bb_mid, _bb_lower, _supertrend,
+                                        _atr, _adx, _macd, _donchian, _keltner, _stoch)
+            close_np = df['Close'].to_numpy(dtype=float)
+            high_np  = df['High'].to_numpy(dtype=float)
+            low_np   = df['Low'].to_numpy(dtype=float)
+
+            for entry in plt_calls:
+                try:
+                    k    = entry['key']
+                    t    = k[0]
+                    name = entry['name']
+                    ovl  = entry.get('overlay', True)
+
+                    if t == 'FGI':
+                        import numpy as _np
+                        from script_runner import _get_fgi_history
+                        history = _get_fgi_history()
+                        fgi_arr = _np.array([
+                            float(history.get(dt.strftime("%Y-%m-%d"), float('nan')))
+                            for dt in df.index
+                        ], dtype=float)
+                        pts = build_pts(fgi_arr, False)
+                        if pts:
+                            indicators[name] = {"data": pts, "overlay": False, "type": "line"}
+                        continue
+
+                    if t == 'SUPERT_LINE':
+                        line_s, dir_s = _supertrend(high_np, low_np, close_np, k[1], k[2])
+                        line_arr = line_s.to_numpy(); dir_arr = dir_s.to_numpy()
+                        st_pts = []
+                        for i, t_str in enumerate(times):
+                            if i >= len(line_arr): break
+                            try:
+                                fv = float(line_arr[i]); dv = float(dir_arr[i])
+                                if not (math.isnan(fv) or math.isinf(fv)) and not math.isnan(dv):
+                                    st_pts.append({"time": t_str, "value": round(fv),
+                                                   "color": '#22c55e' if dv > 0 else '#ef4444'})
+                            except Exception:
+                                pass
+                        if st_pts:
+                            indicators[name] = {"data": st_pts, "overlay": ovl, "type": "SUPERT_LINE"}
+                        continue
+
+                    if   t == 'SMA':   arr = _sma(close_np, k[1]).to_numpy()
+                    elif t == 'EMA':   arr = _ema(close_np, k[1]).to_numpy()
+                    elif t == 'RSI':   arr = _rsi(close_np, k[1]).to_numpy()
+                    elif t == 'BB_U':  arr = _bb_upper(close_np, k[1], k[2]).to_numpy()
+                    elif t == 'BB_M':  arr = _bb_mid(close_np, k[1]).to_numpy()
+                    elif t == 'BB_L':  arr = _bb_lower(close_np, k[1], k[2]).to_numpy()
+                    elif t == 'ATR':   arr = _atr(high_np, low_np, close_np, k[1]).to_numpy()
+                    elif t == 'ADX':   arr = _adx(high_np, low_np, close_np, k[1])[0].to_numpy()
+                    elif t == 'PDI':   arr = _adx(high_np, low_np, close_np, k[1])[1].to_numpy()
+                    elif t == 'MDI':   arr = _adx(high_np, low_np, close_np, k[1])[2].to_numpy()
+                    elif t == 'MACD':     arr = _macd(close_np, k[1], k[2], k[3])[0].to_numpy()
+                    elif t == 'MACDsig':  arr = _macd(close_np, k[1], k[2], k[3])[1].to_numpy()
+                    elif t == 'MACDhist': arr = _macd(close_np, k[1], k[2], k[3])[2].to_numpy()
+                    elif t == 'DC_U':  arr = _donchian(high_np, low_np, k[1])[0].to_numpy()
+                    elif t == 'DC_L':  arr = _donchian(high_np, low_np, k[1])[1].to_numpy()
+                    elif t == 'DC_M':  arr = _donchian(high_np, low_np, k[1])[2].to_numpy()
+                    elif t == 'KC_U':  arr = _keltner(high_np, low_np, close_np, k[1], k[2])[0].to_numpy()
+                    elif t == 'KC_L':  arr = _keltner(high_np, low_np, close_np, k[1], k[2])[1].to_numpy()
+                    elif t == 'KC_M':  arr = _keltner(high_np, low_np, close_np, k[1], k[2])[2].to_numpy()
+                    elif t == 'STOCH_K': arr = _stoch(high_np, low_np, close_np, k[1], k[2])[0].to_numpy()
+                    elif t == 'STOCH_D': arr = _stoch(high_np, low_np, close_np, k[1], k[2])[1].to_numpy()
+                    else: continue
+
+                    pts = build_pts(arr, ovl)
+                    if pts:
+                        indicators[name] = {"data": pts, "overlay": ovl, "type": t}
+                except Exception as e:
+                    print(f"[plt] {e}")
+        else:
+            # plt() 없을 때: _ind_snapshot 기반 자동 표시 (하위 호환)
+            from script_runner import _sma, _ema, _rsi, _bb_upper, _bb_mid, _bb_lower, _supertrend
+            snapshot = getattr(StratClass, '_ind_snapshot', {})
+            close_np = df['Close'].to_numpy(dtype=float)
+            high_np  = df['High'].to_numpy(dtype=float)
+            low_np   = df['Low'].to_numpy(dtype=float)
+
+            for key in snapshot.keys():
+                t = key[0]
+                try:
+                    if t == 'SMA':
+                        arr = _sma(close_np, key[1]).to_numpy()
+                        label, ovl = f"SMA({key[1]})", True
+                    elif t == 'EMA':
+                        arr = _ema(close_np, key[1]).to_numpy()
+                        label, ovl = f"EMA({key[1]})", True
+                    elif t == 'RSI':
+                        arr = _rsi(close_np, key[1]).to_numpy()
+                        label, ovl = f"RSI({key[1]})", False
+                    elif t == 'BB_U':
+                        arr = _bb_upper(close_np, key[1], key[2]).to_numpy()
+                        label, ovl = f"BB상단({key[1]})", True
+                    elif t == 'BB_M':
+                        arr = _bb_mid(close_np, key[1]).to_numpy()
+                        label, ovl = f"BB중간({key[1]})", True
+                    elif t == 'BB_L':
+                        arr = _bb_lower(close_np, key[1], key[2]).to_numpy()
+                        label, ovl = f"BB하단({key[1]})", True
+                    elif t == 'SUPERT_LINE':
+                        line_s, dir_s = _supertrend(high_np, low_np, close_np, key[1], key[2])
+                        line_arr = line_s.to_numpy(); dir_arr = dir_s.to_numpy()
+                        label = f"SUPERT({key[1]},{key[2]})"
+                        st_pts = []
+                        for i, t_str in enumerate(times):
+                            if i >= len(line_arr): break
+                            try:
+                                fv = float(line_arr[i]); dv = float(dir_arr[i])
+                                if not (math.isnan(fv) or math.isinf(fv)) and not math.isnan(dv):
+                                    st_pts.append({"time": t_str, "value": round(fv),
+                                                   "color": '#22c55e' if dv > 0 else '#ef4444'})
+                            except Exception:
+                                pass
+                        if st_pts:
+                            indicators[label] = {"data": st_pts, "overlay": True, "type": "SUPERT_LINE"}
+                        continue
+                    elif t == 'SUPERT_DIR':
+                        continue
+                    else:
+                        continue
+                except Exception:
                     continue
-                elif t == 'SUPERT_DIR':
-                    continue
-                else:
-                    continue
-            except Exception:
-                continue
-            pts = build_pts(arr, ovl)
-            if pts:
-                indicators[label] = {"data": pts, "overlay": ovl, "type": t}
+                pts = build_pts(arr, ovl)
+                if pts:
+                    indicators[label] = {"data": pts, "overlay": ovl, "type": t}
+
     except Exception as e:
         print(f"[indicators] {e}")
         import traceback; traceback.print_exc()

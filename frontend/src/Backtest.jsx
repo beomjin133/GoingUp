@@ -1,10 +1,9 @@
 import React from 'react';
 import { createChart } from 'lightweight-charts';
 import Editor from '@monaco-editor/react';
-import { API_BASE, fmt } from './data';
+import { API_BASE, fmt, fmtShortKRW } from './data';
 import { Icon } from './components';
 
-const SERVICES = [{ id: 'upbit', label: '업비트 (코인)' }];
 const MONTH_LABELS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const INTERVALS = [
   { id: 'day',       label: '일봉' },
@@ -92,20 +91,25 @@ function StatCard({ label, value, color, sub }) {
   );
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+
 export default function Backtest({ state, dispatch }) {
-  const [service,  setService]  = React.useState('upbit');
-  const [strategy, setStrategy] = React.useState('');
+  const [services,  setServices]  = React.useState([]);
+  const [service,   setService]   = React.useState('');
+  const [strategy,  setStrategy]  = React.useState('');
   const [strategies, setStrategies] = React.useState([]);
-  const [ticker,   setTicker]   = React.useState('BTC');
-  const [start,    setStart]    = React.useState('2024-01-01');
-  const [end,      setEnd]      = React.useState(new Date().toISOString().slice(0, 10));
-  const [cash,       setCash]       = React.useState(1000000);
-  const [interval,   setInterval]   = React.useState('day');
+  const [ticker,    setTicker]    = React.useState('BTC');
+  const [start,     setStart]     = React.useState(daysAgo(365));
+  const [end,       setEnd]       = React.useState(today());
+  const [interval,  setInterval]  = React.useState('day');
   const [commission, setCommission] = React.useState(0.05);
   const [slippage,   setSlippage]   = React.useState(0.0);
-  const [result,   setResult]   = React.useState(null);
-  const [loading,  setLoading]  = React.useState(false);
-  const [error,    setError]    = React.useState(null);
+  const [result,         setResult]         = React.useState(null);
+  const [loading,        setLoading]        = React.useState(false);
+  const [error,          setError]          = React.useState(null);
+  const [showAllTrades,  setShowAllTrades]  = React.useState(false);
+  const [priceLegend,    setPriceLegend]    = React.useState([]);
 
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [editorCode, setEditorCode] = React.useState('');
@@ -119,12 +123,14 @@ export default function Backtest({ state, dispatch }) {
   const [exportEnable, setExportEnable] = React.useState(true);
   const [exportMsg,    setExportMsg]    = React.useState('');
 
-  const priceRef   = React.useRef(null);
-  const equityRef  = React.useRef(null);
-  const priceInst  = React.useRef(null);
-  const equityInst = React.useRef(null);
-  const oscRefsMap  = React.useRef({});
-  const oscInstsMap = React.useRef({});
+  const priceRef      = React.useRef(null);
+  const equityRef     = React.useRef(null);
+  const priceInst     = React.useRef(null);
+  const equityInst    = React.useRef(null);
+  const oscRefsMap    = React.useRef({});
+  const oscInstsMap   = React.useRef({});
+  const crosshairDivs     = React.useRef([]);
+  const backdropMouseDown = React.useRef(null);
 
   function registerAutoTrade() {
     setExportMsg('');
@@ -142,14 +148,26 @@ export default function Backtest({ state, dispatch }) {
     })
       .then(r => r.json())
       .then(d => {
-        if (d.ok) setExportMsg('✓ 자동매매에 등록되었습니다');
+        if (d.ok) { setExportOpen(false); }
         else setExportMsg('오류: ' + (d.msg || '등록 실패'));
       })
       .catch(e => setExportMsg('오류: ' + e));
   }
 
+  // 거래소 목록 로드
+  React.useEffect(() => {
+    fetch(`${API_BASE}/api/exchanges`)
+      .then(r => r.json())
+      .then(list => {
+        const filtered = list.filter(e => e.kind === 'crypto');
+        setServices(filtered);
+        if (filtered.length > 0 && !service) setService(filtered[0].exchange);
+      });
+  }, []);
+
   // 전략 목록 로드
   React.useEffect(() => {
+    if (!service) return;
     fetch(`${API_BASE}/api/strategy-files/${service}`)
       .then(r => r.json())
       .then(list => {
@@ -184,17 +202,25 @@ export default function Backtest({ state, dispatch }) {
     };
 
     // ── 가격 차트 (캔들) ──
-    const priceChart = createChart(priceRef.current, { ...baseOpts, height: 320 });
+    const priceChart = createChart(priceRef.current, { ...baseOpts, height: 480 });
+    const priceFormatter = v => {
+      if (v >= 1e12)      return (v / 1e12).toFixed(1) + '조';
+      if (v >= 1e8)       return (v / 1e8).toFixed(1) + '억';
+      if (v >= 1e4)       return Math.round(v / 1e4) + '만';
+      return v.toFixed(0);
+    };
     const candleSeries = priceChart.addCandlestickSeries({
       upColor: '#F24147', downColor: '#1967D2',
       borderUpColor: '#F24147', borderDownColor: '#1967D2',
       wickUpColor: '#F24147', wickDownColor: '#1967D2',
+      priceFormat: { type: 'custom', formatter: priceFormatter, minMove: 1 },
     });
     candleSeries.setData(result.ohlcv);
 
     // 오버레이 지표 (SMA, EMA, BB)
     const IND_COLORS = ['#F59E0B','#8B5CF6','#06B6D4','#EC4899','#10B981','#F97316'];
     let ci = 0;
+    const legend = [];
     const indEntries = Object.entries(result.indicators || {});
     for (const [name, info] of indEntries) {
       if (!info.overlay || !info.data?.length) continue;
@@ -204,11 +230,14 @@ export default function Backtest({ state, dispatch }) {
       else if (t === 'BB_M')            color = 'rgba(147,197,253,0.55)';
       else                              color = IND_COLORS[ci++ % IND_COLORS.length];
       const s = priceChart.addLineSeries({
-        color, lineWidth: 1, title: name,
+        color, lineWidth: 1,
+        // title 제거: 가격축에 이름 라벨이 붙어 캔들을 가리는 문제 → 좌상단 범례로 대체
         priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false,
       });
       s.setData(info.data);
+      legend.push({ name, color });
     }
+    setPriceLegend(legend);
 
     // 매수/매도 마커
     const markers = result.trades.flatMap(t => {
@@ -221,10 +250,10 @@ export default function Backtest({ state, dispatch }) {
     priceInst.current = priceChart;
 
     // ── 수익 곡선 차트 ──
-    const equityChart = createChart(equityRef.current, { ...baseOpts, height: 200 });
+    const equityChart = createChart(equityRef.current, { ...baseOpts, height: 260 });
     const lineSeries = equityChart.addLineSeries({
       color: '#1A55F0', lineWidth: 2,
-      priceFormat: { type: 'custom', formatter: v => '₩' + fmt(v) },
+      priceFormat: { type: 'custom', formatter: fmtShortKRW },
     });
     lineSeries.setData(result.equity_curve);
     equityChart.timeScale().fitContent();
@@ -232,11 +261,16 @@ export default function Backtest({ state, dispatch }) {
 
     // ── 보조 지표 차트 (RSI 등) ──
     const oscChartsList = [];
+    const chartSeriesMap = new Map([[priceChart, candleSeries], [equityChart, lineSeries]]);
+    const priceDataMap  = new Map(result.ohlcv.map(d => [d.time, d.close]));
+    const equityDataMap = new Map(result.equity_curve.map(d => [d.time, d.value]));
+    const chartDataMap  = new Map([[priceChart, priceDataMap], [equityChart, equityDataMap]]);
     for (const [name, info] of indEntries) {
       if (info.overlay || !info.data?.length) continue;
       const el = oscRefsMap.current[name];
       if (!el) continue;
-      const oscChart = createChart(el, { ...baseOpts, height: 110 });
+      const oscChart = createChart(el, { ...baseOpts, height: 150 });
+      let primarySeries;
       if (info.type === 'RSI') {
         const rsiLine = oscChart.addLineSeries({
           color: '#A78BFA', lineWidth: 1.5,
@@ -249,26 +283,74 @@ export default function Backtest({ state, dispatch }) {
         ob.setData(ref.map(d => ({ time: d.time, value: 70 })));
         const os = oscChart.addLineSeries({ color: 'rgba(34,197,94,0.3)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false });
         os.setData(ref.map(d => ({ time: d.time, value: 30 })));
+        primarySeries = rsiLine;
       } else {
         const s = oscChart.addLineSeries({ color: '#60A5FA', lineWidth: 1.5, priceLineVisible: false, title: name });
         s.setData(info.data);
+        primarySeries = s;
       }
+      chartSeriesMap.set(oscChart, primarySeries);
+      chartDataMap.set(oscChart, new Map(info.data.map(d => [d.time, d.value])));
       oscChart.timeScale().fitContent();
       oscInstsMap.current[name] = oscChart;
       oscChartsList.push(oscChart);
     }
 
-    // ── 모든 차트 시간축 동기화 ──
+    // ── 모든 차트 시간축 동기화 (날짜 기준) ──
     let syncing = false;
     const allCharts = [priceChart, equityChart, ...oscChartsList];
     allCharts.forEach(chart => {
-      chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      chart.timeScale().subscribeVisibleTimeRangeChange(range => {
         if (syncing || !range) return;
         syncing = true;
-        allCharts.filter(c => c !== chart).forEach(c => c.timeScale().setVisibleLogicalRange(range));
-        syncing = false;
+        allCharts.filter(c => c !== chart).forEach(c => c.timeScale().setVisibleRange(range));
+        // rAF로 지연 해제 → 비동기로 발생하는 연쇄 이벤트도 차단
+        requestAnimationFrame(() => { syncing = false; });
       });
     });
+
+    // ── 크로스헤어 세로줄 동기화 (CSS 오버레이 방식) ──
+    // setCrosshairPosition 대신 CSS div를 사용해 차트 내부 이벤트를 전혀 건드리지 않음
+    crosshairDivs.current.forEach(d => d.remove());
+    crosshairDivs.current = [];
+
+    const chartEls = [
+      priceRef.current,
+      equityRef.current,
+      ...Object.values(oscRefsMap.current).filter(Boolean),
+    ];
+    chartEls.forEach(el => {
+      el.style.position = 'relative';
+      const line = document.createElement('div');
+      line.style.cssText = [
+        'position:absolute', 'top:0', 'bottom:0', 'width:1px',
+        'background:rgba(197,203,206,0.5)', 'pointer-events:none',
+        'display:none', 'z-index:10', 'transform:translateX(-50%)',
+      ].join(';');
+      el.appendChild(line);
+      crosshairDivs.current.push(line);
+    });
+
+    const showLines = (x) => {
+      crosshairDivs.current.forEach(l => {
+        if (x == null) { l.style.display = 'none'; }
+        else { l.style.display = 'block'; l.style.left = x + 'px'; }
+      });
+    };
+    allCharts.forEach(chart => {
+      chart.subscribeCrosshairMove(param => {
+        showLines(param.point ? param.point.x : null);
+      });
+    });
+
+    // ── y축 너비 동기화 (렌더링 후 실제 너비를 minimumWidth로 맞춤) ──
+    const syncYWidth = () => {
+      const widths = allCharts.map(c => { try { return c.priceScale('right').width(); } catch { return 0; } });
+      const maxW = Math.max(...widths);
+      if (maxW > 0) allCharts.forEach(c => c.applyOptions({ rightPriceScale: { minimumWidth: maxW } }));
+    };
+    setTimeout(syncYWidth, 50);
+    setTimeout(syncYWidth, 300);
 
     // 리사이즈 대응
     const obs = new ResizeObserver(() => {
@@ -329,10 +411,11 @@ export default function Backtest({ state, dispatch }) {
     setLoading(true);
     setError(null);
     setResult(null);
+    setShowAllTrades(false);
     fetch(`${API_BASE}/api/backtest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service, strategy: overrideStrategy || strategy, ticker, start, end, cash, interval, commission, slippage }),
+      body: JSON.stringify({ service, strategy: overrideStrategy || strategy, ticker, start, end, interval, commission, slippage }),
     })
       .then(r => r.json())
       .then(data => {
@@ -370,7 +453,7 @@ export default function Backtest({ state, dispatch }) {
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: 11, color: 'var(--gu-fg3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>거래소</span>
             <select className="gu-input" value={service} onChange={e => setService(e.target.value)}>
-              {SERVICES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              {services.map(s => <option key={s.exchange} value={s.exchange}>{s.name}</option>)}
             </select>
           </label>
 
@@ -400,20 +483,20 @@ export default function Backtest({ state, dispatch }) {
             <input className="gu-input" value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} placeholder="BTC" />
           </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--gu-fg3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>시작일</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--gu-fg3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>기간</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[['1달', 30], ['3달', 90], ['1년', 365], ['전체', 365 * 10]].map(([label, days]) => (
+                <button key={label} className="gu-btn gu-btn-ghost gu-btn-sm"
+                  style={{ flex: 1, justifyContent: 'center', fontSize: 11 }}
+                  onClick={() => { setStart(daysAgo(days)); setEnd(today()); }}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <input className="gu-input" type="date" value={start} onChange={e => setStart(e.target.value)} />
-          </label>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--gu-fg3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>종료일</span>
             <input className="gu-input" type="date" value={end} onChange={e => setEnd(e.target.value)} />
-          </label>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--gu-fg3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>초기 자본</span>
-            <input className="gu-input" type="number" value={cash} onChange={e => setCash(Number(e.target.value))} />
-          </label>
+          </div>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: 11, color: 'var(--gu-fg3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>실행 주기</span>
@@ -485,16 +568,13 @@ export default function Backtest({ state, dispatch }) {
                   value={`${s.num_trades}회`} />
                 <StatCard label="샤프 비율"
                   value={s.sharpe_ratio} />
-                <StatCard label="수수료"
-                  value={`${result.config?.commission ?? 0}%`}
-                  sub={result.config?.slippage ? `슬리피지 +${result.config.slippage}%` : undefined} />
               </div>
 
               {/* 자동매매 등록 버튼 */}
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button className="gu-btn gu-btn-primary gu-btn-sm"
                   onClick={() => { setExportMsg(''); setExportOpen(true); }}>
-                  <Icon name="rocket_launch" size={14}/> 자동매매 등록
+                  <Icon name="plus" size={12}/>자동매매 등록
                 </button>
               </div>
 
@@ -516,7 +596,25 @@ export default function Backtest({ state, dispatch }) {
                     </span>
                   </div>
                 </div>
-                <div ref={priceRef} style={{ width: '100%' }} />
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <div ref={priceRef} style={{ width: '100%' }} />
+                  {priceLegend.length > 0 && (
+                    <div style={{
+                      position: 'absolute', top: 8, left: 10, zIndex: 5,
+                      display: 'flex', flexDirection: 'column', gap: 2,
+                      pointerEvents: 'none',
+                    }}>
+                      {priceLegend.map(({ name, color }) => (
+                        <span key={name} style={{ display: 'flex', alignItems: 'center', gap: 5,
+                          fontSize: 11, fontWeight: 600, color: 'var(--gu-fg2)',
+                          textShadow: '0 0 3px var(--gu-bg1), 0 0 3px var(--gu-bg1)' }}>
+                          <span style={{ width: 14, height: 2, background: color, display: 'inline-block', borderRadius: 1 }}/>
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 보조 지표 차트 (RSI 등) */}
@@ -542,8 +640,14 @@ export default function Backtest({ state, dispatch }) {
 
               {/* 거래 내역 */}
               <div className="gu-card">
-                <div className="gu-card-head">
+                <div className="gu-card-head" style={{ cursor: result.trades.length > 5 ? 'pointer' : 'default' }}
+                  onClick={() => result.trades.length > 5 && setShowAllTrades(v => !v)}>
                   <div className="gu-h4">거래 내역 ({result.trades.length}건)</div>
+                  {result.trades.length > 5 && (
+                    <span style={{ fontSize: 11, color: 'var(--gu-fg4)' }}>
+                      {showAllTrades ? '접기' : `+${result.trades.length - 5}건 더보기`}
+                    </span>
+                  )}
                 </div>
                 <table className="gu-table">
                   <thead>
@@ -560,7 +664,7 @@ export default function Backtest({ state, dispatch }) {
                   <tbody>
                     {result.trades.length === 0 ? (
                       <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--gu-fg3)', padding: 32 }}>거래 없음</td></tr>
-                    ) : result.trades.map((t, i) => (
+                    ) : (showAllTrades ? result.trades : result.trades.slice(-5)).map((t, i) => (
                       <tr key={i} style={t.open ? { opacity: 0.7 } : {}}>
                         <td style={{ color: 'var(--gu-fg3)', fontSize: 12 }}>{t.entry_time}</td>
                         <td style={{ color: 'var(--gu-fg3)', fontSize: 12 }}>
@@ -636,7 +740,11 @@ export default function Backtest({ state, dispatch }) {
             />
           </div>
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--gu-fg4)', lineHeight: 1.7 }}>
-            사용 가능한 지표: <code>SMA(n)</code> · <code>EMA(n)</code> · <code>RSI(n)</code> · <code>BB(n, std)</code> · <code>SUPERT(period, mult)</code>
+            지표: <code>SMA(n)</code> · <code>EMA(n)</code> · <code>RSI(n)</code> · <code>BB(n, std)</code> · <code>SUPERT(period, mult)</code> · <code>FGI()</code>
+            &nbsp;|&nbsp;
+            추가 지표: <code>ATR(n)</code> · <code>ADX(n)</code>→.adx/.plus_di/.minus_di · <code>MACD(f,s,sig)</code>→.macd/.signal/.hist · <code>DONCHIAN(n)</code>→.upper/.lower/.mid · <code>KELTNER(n,mult)</code>→.upper/.lower/.mid · <code>STOCH(k,d)</code>→.k/.d
+            &nbsp;|&nbsp;
+            차트: <code>plt(지표)</code> · <code>plt(지표, overlay=False)</code>
             &nbsp;|&nbsp;
             조건: <code>crossover(a, b)</code> · <code>crossunder(a, b)</code>
             &nbsp;|&nbsp;
@@ -653,7 +761,15 @@ export default function Backtest({ state, dispatch }) {
           position: 'fixed', inset: 0, zIndex: 1000,
           background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
-          onClick={e => { if (e.target === e.currentTarget) setExportOpen(false); }}
+          onMouseDown={e => {
+            backdropMouseDown.current = e.target === e.currentTarget
+              ? { x: e.clientX, y: e.clientY } : null;
+          }}
+          onClick={e => {
+            const down = backdropMouseDown.current;
+            if (!down || e.target !== e.currentTarget) return;
+            if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) setExportOpen(false);
+          }}
         >
           <div className="gu-card" style={{ width: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="gu-card-head">
