@@ -210,6 +210,44 @@ def _stoch(high, low, close, k=14, d=3):
     kline = raw.rolling(d).mean()
     return kline, kline.rolling(d).mean()
 
+def _zigzag(high, low, close, dev=0.1):
+    """인과적 ZigZag (엘리어트 파동 근사용 스윙 피벗).
+
+    핵심: '미확정' 피벗은 절대 노출하지 않음 → repaint/미래참조 없음.
+    피벗은 가격이 직전 극값에서 dev(비율)만큼 역행해야 비로소 '확정'됨.
+
+    반환: (dir_s, piv_s, prev_s, leg_s)
+      dir : 현재 진행 중인 다리 방향 (+1 상승, -1 하락).
+            부호 전환(prev와 다름) = 직전 피벗이 막 확정된 시점.
+      piv : 마지막으로 확정된 피벗 가격
+      prev: 그 직전 확정 피벗 가격 (piv와 함께 직전 '다리'를 정의)
+      leg : 확정된 다리 번호(파동 카운트 근사). 피벗 확정마다 1씩 증가.
+    """
+    import numpy as np
+    high = np.asarray(high, float); low = np.asarray(low, float); close = np.asarray(close, float)
+    n = len(close)
+    dir_arr = np.full(n, 1.0); piv_arr = np.full(n, close[0])
+    prev_arr = np.full(n, close[0]); leg_arr = np.zeros(n)
+    direction = 1
+    ext = high[0]
+    confirmed = close[0]; prev_conf = close[0]; leg = 0
+    for i in range(n):
+        if direction == 1:
+            if high[i] > ext:
+                ext = high[i]
+            elif low[i] <= ext * (1 - dev):       # 고점에서 dev만큼 하락 → 고점 피벗 확정
+                prev_conf, confirmed = confirmed, ext
+                direction = -1; ext = low[i]; leg += 1
+        else:
+            if low[i] < ext:
+                ext = low[i]
+            elif high[i] >= ext * (1 + dev):       # 저점에서 dev만큼 상승 → 저점 피벗 확정
+                prev_conf, confirmed = confirmed, ext
+                direction = 1; ext = high[i]; leg += 1
+        dir_arr[i] = direction; piv_arr[i] = confirmed
+        prev_arr[i] = prev_conf; leg_arr[i] = leg
+    return pd.Series(dir_arr), pd.Series(piv_arr), pd.Series(prev_arr), pd.Series(leg_arr)
+
 
 # ── 지표 프록시 ────────────────────────────────────────────
 
@@ -294,6 +332,14 @@ class _Stoch:
     def __init__(self, k, d):
         self.k = k
         self.d = d
+
+class _ZZ:
+    """ZigZag 스윙 피벗 (엘리어트 근사). dir/pivot/prev/leg 모두 _Ind."""
+    def __init__(self, direction, pivot, prev, leg):
+        self.dir   = direction   # +1 상승 다리 / -1 하락 다리
+        self.pivot = pivot        # 마지막 확정 피벗 가격
+        self.prev  = prev         # 직전 확정 피벗 가격
+        self.leg   = leg          # 확정 다리 수(파동 카운트 근사)
 
 
 # ── 상태 변수 (mem) ────────────────────────────────────────
@@ -485,6 +531,16 @@ def compile_script(script: str) -> type:
                     s._user_cache[kd] = _Ind(dline.to_numpy(), s.data, key=kd)
                 return _Stoch(s._user_cache[kk], s._user_cache[kd])
 
+            def ZIGZAG(dev=0.1):
+                kd_, kp, kv, kl = ('ZZ_DIR', dev), ('ZZ_PIV', dev), ('ZZ_PREV', dev), ('ZZ_LEG', dev)
+                if kd_ not in s._user_cache:
+                    d_, p_, pv_, lg_ = _zigzag(_to_np(s.data.High), _to_np(s.data.Low), _to_np(s.data.Close), dev)
+                    s._user_cache[kd_] = _Ind(d_.to_numpy(),  s.data, key=kd_)
+                    s._user_cache[kp]  = _Ind(p_.to_numpy(),  s.data, key=kp)
+                    s._user_cache[kv]  = _Ind(pv_.to_numpy(), s.data, key=kv)
+                    s._user_cache[kl]  = _Ind(lg_.to_numpy(), s.data, key=kl)
+                return _ZZ(s._user_cache[kd_], s._user_cache[kp], s._user_cache[kv], s._user_cache[kl])
+
             def mem(default):
                 idx = s._mem_counter; s._mem_counter += 1
                 if idx not in s._mems:
@@ -518,6 +574,8 @@ def compile_script(script: str) -> type:
                         elif t == 'FGI':  name = 'FGI'
                         elif t == 'ATR':  name = f'ATR({k[1]})'
                         elif t == 'ADX':  name = f'ADX({k[1]})'
+                        elif t == 'ZZ_PIV':  name = 'ZigZag'
+                        elif t == 'ZZ_PREV': name = 'ZigZag prev'
                         else: name = str(k)
                     local_plt_calls.append({'key': k, 'name': name,
                                             'overlay': overlay, 'type': 'ind'})
@@ -567,6 +625,7 @@ def compile_script(script: str) -> type:
                 'SMA': SMA, 'EMA': EMA, 'RSI': RSI, 'BB': BB, 'SUPERT': SUPERT, 'FGI': FGI,
                 'ATR': ATR, 'ADX': ADX, 'MACD': MACD, 'DONCHIAN': DONCHIAN, 'KELTNER': KELTNER, 'STOCH': STOCH,
                 'atr': ATR, 'adx': ADX, 'macd': MACD, 'donchian': DONCHIAN, 'keltner': KELTNER, 'stoch': STOCH,
+                'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG,
                 'sma': SMA, 'ema': EMA, 'rsi': RSI, 'bb': BB, 'supert': SUPERT, 'fgi': FGI,
                 'mem': mem, 'plt': plt,
                 'close': s.data.Close, 'open': s.data.Open,
@@ -580,7 +639,7 @@ def compile_script(script: str) -> type:
             }
             exec(s._script, ns)
             s._user_inds = {k: v for k, v in ns.items()
-                            if isinstance(v, (_Ind, _BB, _Mem, _ST, _MACD, _ADX, _Chan, _Stoch))}
+                            if isinstance(v, (_Ind, _BB, _Mem, _ST, _MACD, _ADX, _Chan, _Stoch, _ZZ))}
             type(self)._ind_snapshot = dict(s._user_cache)
             type(self)._plt_calls    = local_plt_calls
 
@@ -624,6 +683,11 @@ def compile_script(script: str) -> type:
             def STOCH(k=14, d=3):
                 return _Stoch(s._user_cache.get(('STOCH_K', k, d)),
                               s._user_cache.get(('STOCH_D', k, d)))
+            def ZIGZAG(dev=0.1):
+                return _ZZ(s._user_cache.get(('ZZ_DIR', dev)),
+                           s._user_cache.get(('ZZ_PIV', dev)),
+                           s._user_cache.get(('ZZ_PREV', dev)),
+                           s._user_cache.get(('ZZ_LEG', dev)))
             def mem(default):
                 idx = s._mem_counter; s._mem_counter += 1
                 return s._mems.get(idx, _Mem(default))
@@ -643,6 +707,7 @@ def compile_script(script: str) -> type:
                 'SMA': SMA, 'EMA': EMA, 'RSI': RSI, 'BB': BB, 'SUPERT': SUPERT, 'FGI': FGI,
                 'ATR': ATR, 'ADX': ADX, 'MACD': MACD, 'DONCHIAN': DONCHIAN, 'KELTNER': KELTNER, 'STOCH': STOCH,
                 'atr': ATR, 'adx': ADX, 'macd': MACD, 'donchian': DONCHIAN, 'keltner': KELTNER, 'stoch': STOCH,
+                'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG,
                 'sma': SMA, 'ema': EMA, 'rsi': RSI, 'bb': BB, 'supert': SUPERT, 'fgi': FGI,
                 'mem': mem, 'plt': lambda *a, **k: None,
                 'close':  float(s.data.Close[-1]),
@@ -786,6 +851,12 @@ def live_run(script: str, ticker: str, adapter, *,
         ck, pk = _last2(kline); cd_, pd_ = _last2(dline)
         return _Stoch(_V(ck, pk), _V(cd_, pd_))
 
+    def ZIGZAG(dev=0.1):
+        d_, p_, pv_, lg_ = _zigzag(high, low, close, dev)
+        cd_, pd2 = _last2(d_); cp, pp = _last2(p_)
+        cv, pv = _last2(pv_); cl, pl = _last2(lg_)
+        return _ZZ(_V(cd_, pd2), _V(cp, pp), _V(cv, pv), _V(cl, pl))
+
     def _xover(a, b):
         ac = a.curr if isinstance(a, _V) else float(a)
         ap = a.prev if isinstance(a, _V) else ac
@@ -835,6 +906,7 @@ def live_run(script: str, ticker: str, adapter, *,
         'SMA': SMA, 'EMA': EMA, 'RSI': RSI, 'BB': BB, 'SUPERT': SUPERT, 'FGI': FGI,
         'ATR': ATR, 'ADX': ADX, 'MACD': MACD, 'DONCHIAN': DONCHIAN, 'KELTNER': KELTNER, 'STOCH': STOCH,
         'atr': ATR, 'adx': ADX, 'macd': MACD, 'donchian': DONCHIAN, 'keltner': KELTNER, 'stoch': STOCH,
+        'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG,
         'sma': SMA, 'ema': EMA, 'rsi': RSI, 'bb': BB, 'supert': SUPERT, 'fgi': FGI,
         'mem': mem, 'plt': lambda *a, **k: None,
         'close': float(close[-1]), 'open': float(open_[-1]),

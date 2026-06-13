@@ -771,7 +771,7 @@ async def run_backtest(request: Request):
         if plt_calls:
             # plt() 호출 기반 — 사용자가 명시적으로 선택한 지표만 그림
             from script_runner import (_sma, _ema, _rsi, _bb_upper, _bb_mid, _bb_lower, _supertrend,
-                                        _atr, _adx, _macd, _donchian, _keltner, _stoch)
+                                        _atr, _adx, _macd, _donchian, _keltner, _stoch, _zigzag)
             close_np = df['Close'].to_numpy(dtype=float)
             high_np  = df['High'].to_numpy(dtype=float)
             low_np   = df['Low'].to_numpy(dtype=float)
@@ -834,6 +834,8 @@ async def run_backtest(request: Request):
                     elif t == 'KC_M':  arr = _keltner(high_np, low_np, close_np, k[1], k[2])[2].to_numpy()
                     elif t == 'STOCH_K': arr = _stoch(high_np, low_np, close_np, k[1], k[2])[0].to_numpy()
                     elif t == 'STOCH_D': arr = _stoch(high_np, low_np, close_np, k[1], k[2])[1].to_numpy()
+                    elif t == 'ZZ_PIV':  arr = _zigzag(high_np, low_np, close_np, k[1])[1].to_numpy()
+                    elif t == 'ZZ_PREV': arr = _zigzag(high_np, low_np, close_np, k[1])[2].to_numpy()
                     else: continue
 
                     pts = build_pts(arr, ovl)

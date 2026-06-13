@@ -184,7 +184,7 @@ class UpbitAdapter(ExchangeAdapter):
                      'price': str(order_krw), 'ord_type': 'price'}
         else:
             query = {'market': market, 'side': 'ask',
-                     'volume': str(qty), 'ord_type': 'market'}
+                     'volume': str(round(qty, 8)), 'ord_type': 'market'}
 
         try:
             res = req.post('https://api.upbit.com/v1/orders',

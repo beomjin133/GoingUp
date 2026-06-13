@@ -742,7 +742,7 @@ export default function Backtest({ state, dispatch }) {
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--gu-fg4)', lineHeight: 1.7 }}>
             지표: <code>SMA(n)</code> · <code>EMA(n)</code> · <code>RSI(n)</code> · <code>BB(n, std)</code> · <code>SUPERT(period, mult)</code> · <code>FGI()</code>
             &nbsp;|&nbsp;
-            추가 지표: <code>ATR(n)</code> · <code>ADX(n)</code>→.adx/.plus_di/.minus_di · <code>MACD(f,s,sig)</code>→.macd/.signal/.hist · <code>DONCHIAN(n)</code>→.upper/.lower/.mid · <code>KELTNER(n,mult)</code>→.upper/.lower/.mid · <code>STOCH(k,d)</code>→.k/.d
+            추가 지표: <code>ATR(n)</code> · <code>ADX(n)</code>→.adx/.plus_di/.minus_di · <code>MACD(f,s,sig)</code>→.macd/.signal/.hist · <code>DONCHIAN(n)</code>→.upper/.lower/.mid · <code>KELTNER(n,mult)</code>→.upper/.lower/.mid · <code>STOCH(k,d)</code>→.k/.d · <code>ZIGZAG(dev)</code>→.dir/.pivot/.prev/.leg (엘리어트 스윙)
             &nbsp;|&nbsp;
             차트: <code>plt(지표)</code> · <code>plt(지표, overlay=False)</code>
             &nbsp;|&nbsp;

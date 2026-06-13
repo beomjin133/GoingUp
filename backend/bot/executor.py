@@ -83,8 +83,31 @@ def execute_signal(signal, strategy_row, adapter):
         if qty <= 0:
             print(f"  → 매도 건너뜀: {ticker} 이 전략으로 매수한 수량 없음")
             return None
-        print(f"  → 시장가 매도: {ticker} {qty} (전략 매수분)")
-        result = adapter.place_order('sell', ticker, 0, qty)
+
+        # 실제 거래소 잔고 확인 — lots와 불일치 방지
+        try:
+            holdings = adapter.get_holdings()
+            actual_qty = next(
+                (float(h['amt']) for h in holdings if h['ticker'] == ticker),
+                0.0
+            )
+        except Exception:
+            actual_qty = qty  # 조회 실패 시 lots 기준 사용
+
+        if actual_qty <= 0:
+            # 수동 매도 등으로 잔고가 이미 없음 → lots만 정리
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM lots WHERE ticker = %s AND source = 'auto' AND strategy_id = %s",
+                        (ticker, strategy_row['id'])
+                    )
+            print(f"  → 잔고 없음 (수동 매도 추정): lots 정리 완료")
+            return None
+
+        sell_qty = round(min(qty, actual_qty), 8)  # 정밀도 보정 + 잔고 초과 방지
+        print(f"  → 시장가 매도: {ticker} {sell_qty} (lots={qty}, 잔고={actual_qty})")
+        result = adapter.place_order('sell', ticker, 0, sell_qty)
     else:
         return None
 
