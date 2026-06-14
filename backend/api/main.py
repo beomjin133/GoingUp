@@ -529,6 +529,189 @@ def get_auto_stats():
     }
 
 
+@app.get("/api/strategies/performance")
+def get_strategies_performance():
+    """전략별(strategy_id) 누적 손익. logs(체결) 현금흐름 + lots(보유) 평가액으로 계산.
+    손익 = 매도금액 합 + 현재 보유 평가액 − 매수금액 합  (실현+미실현)."""
+    import pyupbit
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT strategy_id,
+                  SUM(CASE WHEN side='buy'  THEN amt*price ELSE 0 END) AS bought,
+                  SUM(CASE WHEN side='sell' THEN amt*price ELSE 0 END) AS sold,
+                  SUM(CASE WHEN side='buy'  THEN 1 ELSE 0 END) AS buys,
+                  SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,
+                  MAX(created_at) AS last_trade
+                FROM logs
+                WHERE source='auto' AND strategy_id IS NOT NULL
+                GROUP BY strategy_id
+            """)
+            agg = {r['strategy_id']: r for r in cur.fetchall()}
+            cur.execute("""
+                SELECT strategy_id, ticker,
+                       SUM(amt) AS open_amt, SUM(amt*price) AS open_cost
+                FROM lots
+                WHERE source='auto' AND strategy_id IS NOT NULL
+                GROUP BY strategy_id, ticker
+            """)
+            lots = cur.fetchall()
+
+    # 보유 종목 현재가 (업비트)
+    tickers = sorted({l['ticker'] for l in lots if float(l['open_amt'] or 0) > 0})
+    prices = {}
+    if tickers:
+        try:
+            pr = pyupbit.get_current_price([f"KRW-{t}" for t in tickers])
+            if isinstance(pr, dict):
+                prices = {k.split('-', 1)[1]: v for k, v in pr.items()}
+            elif len(tickers) == 1:
+                prices = {tickers[0]: pr}
+        except Exception:
+            prices = {}
+
+    open_by = {}
+    for l in lots:
+        sid = l['strategy_id']
+        amt = float(l['open_amt'] or 0)
+        cost = float(l['open_cost'] or 0)
+        val = amt * float(prices.get(l['ticker'], 0) or 0)
+        d = open_by.setdefault(sid, {'value': 0.0, 'cost': 0.0})
+        d['value'] += val
+        d['cost'] += cost
+
+    out = {}
+    for sid in set(agg) | set(open_by):
+        a = agg.get(sid, {})
+        bought = float(a.get('bought') or 0)
+        sold = float(a.get('sold') or 0)
+        op = open_by.get(sid, {'value': 0.0, 'cost': 0.0})
+        open_value = op['value']
+        pl = sold + open_value - bought
+        ret = (pl / bought * 100) if bought > 0 else 0.0
+        out[str(sid)] = {
+            'pl': round(pl),
+            'return_pct': round(ret, 2),
+            'bought': round(bought),
+            'sold': round(sold),
+            'open_value': round(open_value),
+            'realized': round(sold - (bought - op['cost'])),
+            'unrealized': round(open_value - op['cost']),
+            'buys': int(a.get('buys') or 0),
+            'sells': int(a.get('sells') or 0),
+            'holding': open_value > 0,
+        }
+    return out
+
+
+@app.get("/api/strategies/{strategy_id}/detail")
+def get_strategy_detail(strategy_id: int):
+    """전략 1개의 상세 성과: 총/연수익·MDD·승률·거래수·샤프 + 일별 자본곡선 + 체결(라운드트립)."""
+    import pyupbit, pandas as pd, math
+    from datetime import datetime
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM strategies WHERE id = %s", (strategy_id,))
+            strat = cur.fetchone()
+            if not strat:
+                return JSONResponse(status_code=404, content={"error": "전략을 찾을 수 없습니다"})
+            cur.execute("""SELECT side, amt, price, created_at FROM logs
+                           WHERE source='auto' AND strategy_id=%s ORDER BY created_at ASC""",
+                        (strategy_id,))
+            rows = cur.fetchall()
+            cur.execute("""SELECT SUM(amt) AS amt, SUM(amt*price) AS cost FROM lots
+                           WHERE source='auto' AND strategy_id=%s""", (strategy_id,))
+            openrow = cur.fetchone()
+
+    ticker = strat['ticker']
+    capital = float(strat['amount'] or 0) or 1.0
+    if not rows:
+        return {"stats": None, "equity_curve": [], "trades": [], "ticker": ticker}
+
+    # 라운드트립(매수 누적 → 매도 시 청산) 구성
+    trades = []
+    pa = pc = 0.0; entry_time = None
+    for r in rows:
+        side = r['side']; amt = float(r['amt'] or 0); price = float(r['price'] or 0); t = r['created_at']
+        if side == 'buy':
+            if pa <= 0: entry_time = t
+            pa += amt; pc += amt * price
+        elif side == 'sell' and pa > 0:
+            pnl = amt * price - pc
+            trades.append({"entry_time": str(entry_time)[:19], "exit_time": str(t)[:19],
+                           "entry_price": round(pc / pa) if pa else 0, "exit_price": round(price),
+                           "pnl": round(pnl), "pnl_pct": round((pnl / pc * 100) if pc else 0, 2), "open": False})
+            pa = pc = 0.0; entry_time = None
+
+    open_amt = float(openrow['amt'] or 0) if openrow else 0.0
+    open_cost = float(openrow['cost'] or 0) if openrow else 0.0
+    if open_amt > 0:
+        try:
+            cur_price = float(pyupbit.get_current_price(f"KRW-{ticker}") or 0)
+        except Exception:
+            cur_price = 0.0
+        upnl = open_amt * cur_price - open_cost
+        trades.append({"entry_time": str(entry_time)[:19] if entry_time else "", "exit_time": None,
+                       "entry_price": round(open_cost / open_amt) if open_amt else 0, "exit_price": None,
+                       "pnl": round(upnl), "pnl_pct": round((upnl / open_cost * 100) if open_cost else 0, 2), "open": True})
+
+    # 일별 자본곡선 (마크투마켓): equity = 자본 + 실현손익 + 미실현손익
+    first_dt = rows[0]['created_at']
+    equity_curve = []; mdd = 0.0; sharpe = 0.0
+    try:
+        df = pyupbit.get_ohlcv_from(f"KRW-{ticker}", interval="day",
+                                    fromDatetime=pd.Timestamp(first_dt).normalize(), period=0.1)
+        if df is not None and not df.empty:
+            ti = 0; bpa = bpc = realized = 0.0; ev = {}
+            for day, row in df.iterrows():
+                d0 = day.normalize()
+                while ti < len(rows) and pd.Timestamp(rows[ti]['created_at']).normalize() <= d0:
+                    rr = rows[ti]; am = float(rr['amt'] or 0); pr = float(rr['price'] or 0)
+                    if rr['side'] == 'buy':
+                        bpa += am; bpc += am * pr
+                    elif rr['side'] == 'sell' and bpa > 0:
+                        realized += am * pr - bpc; bpa = bpc = 0.0
+                    ti += 1
+                unreal = bpa * float(row['close']) - bpc if bpa > 0 else 0.0
+                ev[d0] = capital + realized + unreal
+            es = pd.Series(ev).sort_index()
+            equity_curve = [{"time": d.strftime("%Y-%m-%d"), "value": round(float(v))} for d, v in es.items()]
+            peak = es.cummax(); dd = (es / peak - 1) * 100
+            mdd = float(dd.min()) if len(dd) else 0.0
+            rets = es.pct_change().dropna()
+            if len(rets) > 1 and rets.std() > 0:
+                sharpe = float(rets.mean() / rets.std() * math.sqrt(365))
+    except Exception as e:
+        print(f"[detail] 자본곡선 계산 실패: {e}")
+
+    closed = [t for t in trades if not t['open']]
+    wins = sum(1 for t in closed if t['pnl'] > 0)
+    total_pnl = sum(t['pnl'] for t in trades)
+    total_ret = total_pnl / capital * 100
+    days = max((datetime.now() - pd.Timestamp(first_dt).to_pydatetime()).days, 1)
+    ann = ((1 + total_ret / 100) ** (365 / days) - 1) * 100 if total_ret > -100 else -100.0
+
+    def sf(v):
+        return 0.0 if (v is None or math.isnan(v) or math.isinf(v)) else round(v, 2)
+
+    return {
+        "ticker": ticker,
+        "stats": {
+            "total_return_pct": sf(total_ret),
+            "annual_return_pct": sf(ann),
+            "max_drawdown_pct": sf(mdd),
+            "win_rate": round(wins / len(closed) * 100, 1) if closed else 0,
+            "num_trades": len(closed),
+            "sharpe_ratio": sf(sharpe),
+            "total_pnl": round(total_pnl),
+            "holding": open_amt > 0,
+        },
+        "equity_curve": equity_curve,
+        "trades": trades[::-1],
+    }
+
+
 @app.get("/api/strategies")
 def get_strategies():
     with get_conn() as conn:
