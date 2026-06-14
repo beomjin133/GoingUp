@@ -728,32 +728,77 @@ def get_strategies():
             return cur.fetchall()
 
 
+def _buy_signal_active(service, strategy, ticker, strategy_id):
+    """활성화 '순간'에 매수조건이 이미 켜져 있는지 1회 평가.
+       True(헌 신호)면 armed=0으로 둬서, 조건이 한 번 꺼졌다 다시 켜질 때까지 매수 보류.
+       - 보유 중이거나 DSL이 아니거나 평가 실패 시: False → armed=1(정상)로 fail-open."""
+    try:
+        if strategy_id is not None:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT SUM(amt) AS qty FROM lots "
+                                "WHERE source='auto' AND strategy_id=%s", (strategy_id,))
+                    row = cur.fetchone()
+            if row and float(row['qty'] or 0) > 0:
+                return False  # 보유 중 → 기존 포지션 관리 모드 → 무장
+        path = os.path.join(os.path.dirname(__file__), '..', 'bot', 'strategies',
+                            service.lower(), f'{strategy}.py')
+        with open(path, encoding='utf-8') as f:
+            code = f.read()
+        if 'def run(' in code or 'class BacktestStrategy' in code:
+            return False  # DSL 스크립트가 아니면 아밍 가드 미적용
+        from script_runner import live_run
+        sig = live_run(code, ticker, None, position=False)
+        return sig.get('signal') == 'buy'
+    except Exception as e:
+        print(f"[arm] 활성화 시점 평가 실패: {e}")
+        return False
+
+
 @app.post("/api/strategies")
 def create_strategy(body: dict):
+    from datetime import datetime
     required = ("strategy", "ticker", "service", "amount")
     if any(k not in body for k in required):
         return {"ok": False, "msg": "필수 항목이 누락되었습니다"}
+    enabled = body.get("enabled", 0)
+    # 활성 상태로 생성: last_run=now(캐치업 방지) + 활성화 순간 매수조건이
+    # 이미 켜져 있으면 armed=0(헌 신호 보류), 아니면 1(준비완료).
+    last_run = datetime.now() if enabled else None
+    armed = 0 if (enabled and _buy_signal_active(body["service"], body["strategy"], body["ticker"], None)) else 1
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO strategies (strategy, ticker, service, amount, enabled, cron, params) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "INSERT INTO strategies (strategy, ticker, service, amount, enabled, cron, params, last_run, armed) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON DUPLICATE KEY UPDATE "
                 "amount = VALUES(amount), enabled = VALUES(enabled), "
-                "cron = VALUES(cron), params = VALUES(params)",
+                "cron = VALUES(cron), params = VALUES(params), "
+                "last_run = VALUES(last_run), armed = VALUES(armed)",
                 (body["strategy"], body["ticker"], body["service"],
-                 body["amount"], body.get("enabled", 0),
+                 body["amount"], enabled,
                  body.get("cron", "* * * * *"),
-                 body.get("params") or None)
+                 body.get("params") or None, last_run, armed)
             )
             return {"ok": True, "id": cur.lastrowid}
 
 
 @app.patch("/api/strategies/{strategy_id}")
 def update_strategy(strategy_id: int, body: dict):
+    from datetime import datetime
     fields = {k: v for k, v in body.items() if k in ("enabled", "amount", "cron", "params")}
     if not fields:
         return {"ok": False, "msg": "수정할 필드가 없습니다"}
+    # 활성화(enabled→1) 시: last_run=now(캐치업 방지) + armed 판정(헌 신호면 0).
+    if fields.get("enabled"):
+        fields["last_run"] = datetime.now()
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT service, strategy, ticker FROM strategies WHERE id=%s", (strategy_id,))
+                srow = cur.fetchone()
+        if srow:
+            fields["armed"] = 0 if _buy_signal_active(srow['service'], srow['strategy'],
+                                                       srow['ticker'], strategy_id) else 1
     set_clause = ", ".join(f"{k} = %s" for k in fields)
     with get_conn() as conn:
         with conn.cursor() as cur:

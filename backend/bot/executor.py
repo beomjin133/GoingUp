@@ -37,6 +37,16 @@ def load_adapter_map():
     return adapter_map
 
 
+def _set_armed(strategy_id):
+    """전략을 무장(armed=1)으로 전환 — 이후 매수신호를 실제로 실행."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE strategies SET armed = 1 WHERE id = %s", (strategy_id,))
+    except Exception as e:
+        print(f"  armed 업데이트 실패: {e}")
+
+
 def should_run(cron_expr, last_run):
     now = datetime.now()
     base = last_run if last_run else datetime(now.year, now.month, now.day, 0, 0, 0)
@@ -256,6 +266,24 @@ def run():
                         print(f"  mem 상태 저장 실패: {e}")
 
             print(f"  시그널: {signal}")
+
+            # ── 아밍 가드 ──────────────────────────────────────────────
+            # armed=0: 활성화 순간 이미 켜져 있던 '헌 매수신호'를 보류.
+            #   매수조건이 한 번 꺼진 걸 확인(또는 보유 중)하면 armed=1로 무장 → 이후 정상 매수.
+            if not s.get('armed', 1):
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT SUM(amt) AS qty FROM lots "
+                                    "WHERE source='auto' AND strategy_id=%s", (s['id'],))
+                        hr = cur.fetchone()
+                holding = float(hr['qty'] or 0) > 0 if hr else False
+                if holding:
+                    _set_armed(s['id']); print("  → 무장 (보유 중 → 포지션 관리 모드)")
+                elif signal.get('signal') == 'buy':
+                    print("  → 매수 보류 (미무장: 활성화 시점 신호가 아직 유지 중)")
+                    signal = {**signal, 'signal': 'none'}
+                else:
+                    _set_armed(s['id']); print("  → 무장 완료 (매수조건 해제 확인)")
 
             execute_signal(signal, s, adapter)
 
