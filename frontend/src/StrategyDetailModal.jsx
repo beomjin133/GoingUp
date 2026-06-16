@@ -75,8 +75,10 @@ export default function StrategyDetailModal({ strategy, onClose }) {
               <Stat label="총 수익률" value={`${s.total_return_pct >= 0 ? '+' : ''}${s.total_return_pct}%`}
                 color={s.total_return_pct >= 0 ? 'var(--gu-up)' : 'var(--gu-down)'}
                 sub={`${s.total_pnl >= 0 ? '+' : '−'}₩${Math.abs(s.total_pnl).toLocaleString('ko-KR')}`} />
-              <Stat label="연 수익률" value={`${s.annual_return_pct >= 0 ? '+' : ''}${s.annual_return_pct}%`}
-                color={s.annual_return_pct >= 0 ? 'var(--gu-up)' : 'var(--gu-down)'} />
+              <Stat label="연 수익률"
+                value={s.annual_return_pct == null ? '-' : `${s.annual_return_pct >= 0 ? '+' : ''}${s.annual_return_pct}%`}
+                color={s.annual_return_pct == null ? 'var(--gu-fg3)' : s.annual_return_pct >= 0 ? 'var(--gu-up)' : 'var(--gu-down)'}
+                sub={s.annual_return_pct == null ? '30일 이상 경과 후 표시' : undefined} />
               <Stat label="최대 낙폭" value={`${s.max_drawdown_pct}%`} color="var(--gu-down)" />
               <Stat label="승률" value={`${s.win_rate}%`} />
               <Stat label="거래 횟수" value={`${s.num_trades}회`} />

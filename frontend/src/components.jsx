@@ -85,26 +85,70 @@ export function KindTag({ kind }) {
   return <span className={"gu-hold-kind is-" + kind}>{labels[kind]}</span>;
 }
 
-export function AreaChart({ data, height = 120, color = "#1A55F0", fillOpacity = 0.12 }) {
+export function AreaChart({ data, height = 120, color = "#1A55F0", fillOpacity = 0.12, labels = [] }) {
+  const [hoverIdx, setHoverIdx] = React.useState(null);
   if (!data || data.length === 0) return null;
   const w = 800, h = height;
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
-  const step = w / (data.length - 1);
+  const step = w / Math.max(data.length - 1, 1);
   const pts = data.map((v, i) => [i * step, h - ((v - min) / range) * (h - 10) - 4]);
   const line = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const area = line + ` L ${w} ${h} L 0 ${h} Z`;
+
+  function handleMouseMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * w;
+    setHoverIdx(Math.min(data.length - 1, Math.max(0, Math.round(x / step))));
+  }
+
+  const baseValue = data[0];
+  const hovPct = hoverIdx !== null && baseValue > 0
+    ? ((data[hoverIdx] - baseValue) / baseValue) * 100 : null;
+  const tooltipLeftPct = hoverIdx != null
+    ? Math.min(Math.max((hoverIdx / Math.max(data.length - 1, 1)) * 100, 8), 92)
+    : 50;
+
   return (
-    <svg className="gu-hero-chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{height}}>
-      <defs>
-        <linearGradient id={"gu-ag-" + color.replace("#","")} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={fillOpacity}/>
-          <stop offset="100%" stopColor={color} stopOpacity="0"/>
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#gu-ag-${color.replace("#","")})`} />
-      <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div style={{ position: 'relative' }}>
+      <svg className="gu-hero-chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
+        style={{ height, cursor: 'crosshair' }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}>
+        <defs>
+          <linearGradient id={"gu-ag-" + color.replace("#","")} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={fillOpacity}/>
+            <stop offset="100%" stopColor={color} stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#gu-ag-${color.replace("#","")})`} />
+        <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {hoverIdx !== null && (
+          <>
+            <line x1={pts[hoverIdx][0]} y1={0} x2={pts[hoverIdx][0]} y2={h}
+              stroke="rgba(255,255,255,0.18)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <circle cx={pts[hoverIdx][0]} cy={pts[hoverIdx][1]} r="4"
+              fill={color} stroke="white" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+          </>
+        )}
+      </svg>
+      {hoverIdx !== null && hovPct !== null && (
+        <div style={{
+          position: 'absolute', top: 6,
+          left: tooltipLeftPct + '%', transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.78)', borderRadius: 6, padding: '4px 10px',
+          fontSize: 12, fontWeight: 600, pointerEvents: 'none', whiteSpace: 'nowrap',
+          color: hovPct >= 0 ? '#F24147' : '#5B9BD5', zIndex: 10,
+        }}>
+          {labels[hoverIdx] && (
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 400, marginRight: 6, fontSize: 11 }}>
+              {labels[hoverIdx]}
+            </span>
+          )}
+          {hovPct >= 0 ? '+' : ''}{hovPct.toFixed(2)}%
+        </div>
+      )}
+    </div>
   );
 }
 

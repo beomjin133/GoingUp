@@ -256,6 +256,15 @@ export default function Backtest({ state, dispatch }) {
       priceFormat: { type: 'custom', formatter: fmtShortKRW },
     });
     lineSeries.setData(result.equity_curve);
+    if (result.bnh_curve?.length) {
+      const bnhSeries = equityChart.addLineSeries({
+        color: 'rgba(156,163,175,0.6)', lineWidth: 1,
+        lineStyle: 2,  // dashed
+        priceFormat: { type: 'custom', formatter: fmtShortKRW },
+        lastValueVisible: false, priceLineVisible: false,
+      });
+      bnhSeries.setData(result.bnh_curve);
+    }
     equityChart.timeScale().fitContent();
     equityInst.current = equityChart;
 
@@ -634,6 +643,16 @@ export default function Backtest({ state, dispatch }) {
               <div className="gu-card">
                 <div className="gu-card-head">
                   <div className="gu-h4">수익 곡선</div>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--gu-fg3)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 20, height: 2, background: '#1A55F0', display: 'inline-block' }}/>
+                      전략
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 20, height: 2, background: 'rgba(156,163,175,0.6)', display: 'inline-block', borderTop: '2px dashed rgba(156,163,175,0.6)' }}/>
+                      단순보유
+                    </span>
+                  </div>
                 </div>
                 <div ref={equityRef} style={{ width: '100%' }} />
               </div>

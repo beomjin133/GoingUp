@@ -690,7 +690,7 @@ def get_strategy_detail(strategy_id: int):
     total_pnl = sum(t['pnl'] for t in trades)
     total_ret = total_pnl / capital * 100
     days = max((datetime.now() - pd.Timestamp(first_dt).to_pydatetime()).days, 1)
-    ann = ((1 + total_ret / 100) ** (365 / days) - 1) * 100 if total_ret > -100 else -100.0
+    ann = ((1 + total_ret / 100) ** (365 / days) - 1) * 100 if (total_ret > -100 and days >= 30) else None
 
     def sf(v):
         return 0.0 if (v is None or math.isnan(v) or math.isinf(v)) else round(v, 2)
@@ -1141,6 +1141,14 @@ async def run_backtest(request: Request):
         for t, v in equity.items()
     ]
 
+    # 단순보유 수익곡선 (시작 시점 종가로 매수 후 보유)
+    initial_price = float(df['Close'].iloc[0])
+    shares = cash / initial_price if initial_price > 0 else 0
+    bnh_data = [
+        {"time": t.strftime(ts_fmt), "value": round(float(row['Close']) * shares)}
+        for t, row in df.iterrows()
+    ]
+
     # 거래 내역
     last_date = df.index[-1].strftime(ts_fmt)
     trades = []
@@ -1200,6 +1208,7 @@ async def run_backtest(request: Request):
         },
         "ohlcv":           ohlcv_data,
         "equity_curve":    equity_data,
+        "bnh_curve":       bnh_data,
         "trades":          trades,
         "monthly_returns": monthly_returns,
         "indicators":      indicators,

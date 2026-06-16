@@ -374,18 +374,11 @@ function KRXChart({ ticker, theme }) {
       timeScale: { timeVisible: true, borderColor: isDark ? '#21262d' : '#e0e4ef' },
     });
 
-    const CandleSeries = LightweightCharts.CandlestickSeries ?? null;
-    const series = CandleSeries
-      ? chart.addSeries(CandleSeries, {
-          upColor: '#F24147', downColor: '#1967D2',
-          borderUpColor: '#F24147', borderDownColor: '#1967D2',
-          wickUpColor: '#F24147', wickDownColor: '#1967D2',
-        })
-      : chart.addCandlestickSeries({
-          upColor: '#F24147', downColor: '#1967D2',
-          borderUpColor: '#F24147', borderDownColor: '#1967D2',
-          wickUpColor: '#F24147', wickDownColor: '#1967D2',
-        });
+    const series = chart.addCandlestickSeries({
+      upColor: '#F24147', downColor: '#1967D2',
+      borderUpColor: '#F24147', borderDownColor: '#1967D2',
+      wickUpColor: '#F24147', wickDownColor: '#1967D2',
+    });
 
     fetch(`${API_BASE}/api/chart/${ticker}`)
       .then(r => r.json())

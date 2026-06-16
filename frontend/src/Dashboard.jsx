@@ -26,6 +26,11 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
     return makeEquityCurve(90, total);
   }, [snapshots, total]);
 
+  const equityLabels = React.useMemo(() => {
+    if (snapshots.length >= 1) return [...snapshots.map(d => d.date), '오늘'];
+    return [];
+  }, [snapshots]);
+
   const [cashExpanded, setCashExpanded] = React.useState(false);
   const [showConnectModal, setShowConnectModal] = React.useState(false);
   const [connections, setConnections] = React.useState([]);
@@ -93,7 +98,7 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
               </span>
             </span>
           </div>
-          <AreaChart data={equity} height={130} color={isUp ? "#F24147" : "#1967D2"} fillOpacity={0.10} />
+          <AreaChart data={equity} height={130} color={isUp ? "#F24147" : "#1967D2"} fillOpacity={0.10} labels={equityLabels} />
         </div>
 
         <div className="gu-hero-aside">

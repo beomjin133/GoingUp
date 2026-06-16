@@ -26,7 +26,7 @@ class KISAdapter(ExchangeAdapter):
         self._token_expires  = 0
         self._cached_data    = None
         self._cached_at      = 0
-        self._cache_ttl      = 5
+        self._cache_ttl      = 60
 
         self._load_token_from_db()
 
@@ -104,30 +104,50 @@ class KISAdapter(ExchangeAdapter):
         cano         = parts[0]
         acnt_prdt_cd = parts[1] if len(parts) > 1 else "01"
 
-        res = req.get(
-            f"{KIS_BASE}/uapi/domestic-stock/v1/trading/inquire-balance",
-            headers=self._headers("TTTC8434R"),
-            params={
-                "CANO":                  cano,
-                "ACNT_PRDT_CD":          acnt_prdt_cd,
-                "AFHR_FLPR_YN":          "N",
-                "OFL_YN":                "",
-                "INQR_DVSN":             "02",
-                "UNPR_DVSN":             "01",
-                "FUND_STTL_ICLD_YN":     "N",
-                "FNCG_AMT_AUTO_RDPT_YN": "N",
-                "PRCS_DVSN":             "01",
-                "CTX_AREA_FK100":        "",
-                "CTX_AREA_NK100":        "",
-            },
-        )
-        data = res.json()
-        rt_cd = data.get('rt_cd')
-        if rt_cd != '0':
-            print(f"[KIS] 잔고 조회 실패 rt_cd={rt_cd} msg={data.get('msg1')}")
-        self._cached_data = data
-        self._cached_at   = now
-        return self._cached_data
+        params = {
+            "CANO":                  cano,
+            "ACNT_PRDT_CD":          acnt_prdt_cd,
+            "AFHR_FLPR_YN":          "N",
+            "OFL_YN":                "",
+            "INQR_DVSN":             "02",
+            "UNPR_DVSN":             "01",
+            "FUND_STTL_ICLD_YN":     "N",
+            "FNCG_AMT_AUTO_RDPT_YN": "N",
+            "PRCS_DVSN":             "01",
+            "CTX_AREA_FK100":        "",
+            "CTX_AREA_NK100":        "",
+        }
+
+        # 초당 호출 제한 시 최대 3회 재시도
+        data = None
+        for attempt in range(3):
+            res   = req.get(f"{KIS_BASE}/uapi/domestic-stock/v1/trading/inquire-balance",
+                            headers=self._headers("TTTC8434R"), params=params)
+            resp  = res.json()
+            rt_cd = resp.get('rt_cd')
+            msg   = resp.get('msg1', '')
+            if rt_cd == '0':
+                data = resp
+                break
+            if '초당' in msg and attempt < 2:
+                print(f"[KIS] 잔고 조회 레이트리밋 — {attempt + 1}회 재시도 대기")
+                time.sleep(0.6)
+            else:
+                print(f"[KIS] 잔고 조회 실패 rt_cd={rt_cd} msg={msg}")
+                break
+
+        if data is not None:
+            # 성공한 경우에만 캐시 갱신
+            self._cached_data = data
+            self._cached_at   = now
+        elif self._cached_data:
+            # 실패 시 이전 캐시 유지 (보유 종목이 사라지지 않도록)
+            print(f"[KIS] 잔고 조회 실패 — 이전 캐시 데이터 유지")
+        else:
+            # 캐시도 없고 실패 → 빈 데이터 반환
+            data = {}
+
+        return self._cached_data or data
 
     # ── 인터페이스 구현 ───────────────────────────────────
 
