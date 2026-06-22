@@ -658,7 +658,7 @@ def get_strategy_detail(strategy_id: int):
 
     # 일별 자본곡선 (마크투마켓): equity = 자본 + 실현손익 + 미실현손익
     first_dt = rows[0]['created_at']
-    equity_curve = []; mdd = 0.0; sharpe = 0.0
+    equity_curve = []; mdd = 0.0; sharpe = 0.0; monthly_returns = {}
     try:
         df = pyupbit.get_ohlcv_from(f"KRW-{ticker}", interval="day",
                                     fromDatetime=pd.Timestamp(first_dt).normalize(), period=0.1)
@@ -682,6 +682,21 @@ def get_strategy_detail(strategy_id: int):
             rets = es.pct_change().dropna()
             if len(rets) > 1 and rets.std() > 0:
                 sharpe = float(rets.mean() / rets.std() * math.sqrt(365))
+            # 월별 수익률
+            try:
+                try:
+                    me = es.resample('ME').last().dropna()
+                except Exception:
+                    me = es.resample('M').last().dropna()
+                for i, (dt, val) in enumerate(me.items()):
+                    yr, mo = dt.year, dt.month
+                    prev = me.iloc[i - 1] if i > 0 else es.iloc[0]
+                    pct = (val / prev - 1) * 100 if prev > 0 else 0.0
+                    if yr not in monthly_returns:
+                        monthly_returns[yr] = {}
+                    monthly_returns[yr][mo] = round(float(pct), 1)
+            except Exception:
+                pass
     except Exception as e:
         print(f"[detail] 자본곡선 계산 실패: {e}")
 
@@ -708,6 +723,7 @@ def get_strategy_detail(strategy_id: int):
             "holding": open_amt > 0,
         },
         "equity_curve": equity_curve,
+        "monthly_returns": monthly_returns,
         "trades": trades[::-1],
     }
 

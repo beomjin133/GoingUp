@@ -92,6 +92,54 @@ export default function StrategyDetailModal({ strategy, onClose }) {
               </div>
             )}
 
+            {data.monthly_returns && Object.keys(data.monthly_returns).length > 0 && (
+              <div className="gu-card" style={{ padding: 12 }}>
+                <div className="gu-h4" style={{ marginBottom: 10 }}>월별 수익률 (%)</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'var(--gu-font-mono)' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '4px 8px', textAlign: 'left', color: 'var(--gu-fg3)', fontWeight: 400 }}>Year</th>
+                        {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                          <th key={m} style={{ padding: '4px 6px', textAlign: 'center', color: 'var(--gu-fg3)', fontWeight: 400 }}>{m}월</th>
+                        ))}
+                        <th style={{ padding: '4px 8px', textAlign: 'center', color: 'var(--gu-fg3)', fontWeight: 400 }}>Year</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(data.monthly_returns).map(Number).sort().map(yr => {
+                        const yrData = data.monthly_returns[yr];
+                        const yearTotal = Object.values(yrData).reduce((acc, pct) => acc * (1 + pct / 100), 1);
+                        const yearPct = Math.round((yearTotal - 1) * 100 * 10) / 10;
+                        return (
+                          <tr key={yr}>
+                            <td style={{ padding: '4px 8px', color: 'var(--gu-fg2)' }}>{yr}</td>
+                            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => {
+                              const pct = yrData[m];
+                              const bg = pct == null ? 'transparent'
+                                : pct > 0 ? `rgba(34,197,94,${Math.min(0.15 + Math.abs(pct) * 0.04, 0.6)})`
+                                : pct < 0 ? `rgba(239,68,68,${Math.min(0.15 + Math.abs(pct) * 0.04, 0.6)})`
+                                : 'transparent';
+                              return (
+                                <td key={m} style={{ padding: '4px 6px', textAlign: 'center', borderRadius: 3, background: bg,
+                                  color: pct == null ? 'var(--gu-fg4)' : pct >= 0 ? 'var(--gu-up)' : 'var(--gu-down)' }}>
+                                  {pct == null ? '' : pct === 0 ? '0' : `${pct > 0 ? '+' : ''}${pct}`}
+                                </td>
+                              );
+                            })}
+                            <td style={{ padding: '4px 8px', textAlign: 'center', fontWeight: 600,
+                              color: yearPct >= 0 ? 'var(--gu-up)' : 'var(--gu-down)' }}>
+                              {yearPct >= 0 ? '+' : ''}{yearPct}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="gu-card" style={{ padding: 0 }}>
               <div className="gu-card-head"><div className="gu-h4">체결 내역 ({data.trades.length}건)</div></div>
               <table className="gu-table">
