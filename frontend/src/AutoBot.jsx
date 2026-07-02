@@ -2,13 +2,16 @@ import React from 'react';
 import { Icon } from './components';
 import { API_BASE } from './data';
 import AddStrategyModal from './AddStrategyModal';
+import EditStrategyModal from './EditStrategyModal';
 import StrategyDetailModal from './StrategyDetailModal';
 
-export default function AutoBot({ dispatch }) {
+export default function AutoBot({ dispatch, state }) {
+  const hidden = state?.hideAmounts;
   const [strategies, setStrategies] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [showAdd, setShowAdd] = React.useState(false);
   const [detailStrategy, setDetailStrategy] = React.useState(null);
+  const [editStrategy, setEditStrategy] = React.useState(null);
 
   function loadStrategies(silent = false) {
     if (!silent) setLoading(true);
@@ -73,6 +76,7 @@ export default function AutoBot({ dispatch }) {
   return (
     <>
     {showAdd && <AddStrategyModal onClose={() => setShowAdd(false)} onAdded={loadStrategies}/>}
+    {editStrategy && <EditStrategyModal strategy={editStrategy} onClose={() => setEditStrategy(null)} onSaved={() => { loadStrategies(); loadPerf(); }}/>}
     {detailStrategy && <StrategyDetailModal strategy={detailStrategy} onClose={() => setDetailStrategy(null)}/>}
     <main className="gu-page gu-fade-in">
       <div className="gu-page-head">
@@ -104,7 +108,7 @@ export default function AutoBot({ dispatch }) {
         </div>
         <div className="gu-kpi">
           <div className="gu-kpi-lbl">자동매매 누적 손익</div>
-          <div className="gu-kpi-val" style={{color: totalPl >= 0 ? "var(--gu-up)" : "var(--gu-down)"}}>
+          <div className={"gu-kpi-val" + (hidden ? " gu-blur-amt" : "")} style={{color: totalPl >= 0 ? "var(--gu-up)" : "var(--gu-down)"}}>
             {totalPl >= 0 ? "+" : "−"}₩{Math.abs(totalPl).toLocaleString("ko-KR")}
           </div>
           <div className="gu-kpi-delta" style={{color:"var(--gu-fg3)"}}>실현 + 미실현</div>
@@ -112,14 +116,14 @@ export default function AutoBot({ dispatch }) {
         <div className="gu-kpi">
           <div className="gu-kpi-lbl">오늘 자동 매수</div>
           <div className="gu-kpi-val gu-up">{autoStats.today_buys}건</div>
-          <div className="gu-kpi-delta" style={{color:"var(--gu-fg3)"}}>
+          <div className={"gu-kpi-delta" + (hidden ? " gu-blur-amt" : "")} style={{color:"var(--gu-fg3)"}}>
             ₩{Number(autoStats.today_buy_amt).toLocaleString('ko-KR', {maximumFractionDigits:0})}
           </div>
         </div>
         <div className="gu-kpi">
           <div className="gu-kpi-lbl">오늘 자동 매도</div>
           <div className="gu-kpi-val gu-down">{autoStats.today_sells}건</div>
-          <div className="gu-kpi-delta" style={{color:"var(--gu-fg3)"}}>
+          <div className={"gu-kpi-delta" + (hidden ? " gu-blur-amt" : "")} style={{color:"var(--gu-fg3)"}}>
             ₩{Number(autoStats.today_sell_amt).toLocaleString('ko-KR', {maximumFractionDigits:0})}
           </div>
         </div>
@@ -159,7 +163,7 @@ export default function AutoBot({ dispatch }) {
                   <span style={{fontFamily:"var(--gu-font-mono)", fontSize:12}}>{s.ticker}</span>
                 </td>
                 <td>
-                  <span style={{fontFamily:"var(--gu-font-mono)", fontSize:12}}>
+                  <span className={hidden ? "gu-blur-amt" : ""} style={{fontFamily:"var(--gu-font-mono)", fontSize:12}}>
                     ₩{Number(s.amount).toLocaleString("ko-KR")}
                   </span>
                 </td>
@@ -176,7 +180,8 @@ export default function AutoBot({ dispatch }) {
                           {up ? "+" : ""}{p.return_pct}%
                         </span>
                         <span style={{fontFamily:"var(--gu-font-mono)", fontSize:11, color:"var(--gu-fg3)"}}>
-                          {up ? "+" : "−"}₩{Math.abs(p.pl).toLocaleString("ko-KR")}{p.holding ? " · 보유중" : ""}
+                          <span className={hidden ? "gu-blur-amt" : ""}>{up ? "+" : "−"}₩{Math.abs(p.pl).toLocaleString("ko-KR")}</span>
+                          {p.holding ? " · 보유중" : ""}
                         </span>
                       </div>
                     );
@@ -197,7 +202,16 @@ export default function AutoBot({ dispatch }) {
                     style={{display:"inline-block", cursor:"pointer"}}
                   />
                 </td>
-                <td>
+                <td style={{whiteSpace:"nowrap"}}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditStrategy(s); }}
+                    style={{background:"none", border:"none", cursor:"pointer", color:"var(--gu-fg3)", padding:"4px 6px", borderRadius:4, lineHeight:0}}
+                    title="수정"
+                    onMouseEnter={e => e.currentTarget.style.color = "var(--gu-brand-primary)"}
+                    onMouseLeave={e => e.currentTarget.style.color = "var(--gu-fg3)"}
+                  >
+                    <Icon name="settings" size={14}/>
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteStrategy(s.id); }}
                     style={{background:"none", border:"none", cursor:"pointer", color:"var(--gu-fg3)", padding:"4px 6px", borderRadius:4, lineHeight:0}}

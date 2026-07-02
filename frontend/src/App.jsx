@@ -185,7 +185,7 @@ export default function App() {
       {state.tab === "dash"    && <Dashboard  state={state} dispatch={dispatch} data={data} onRefresh={() => { loadData(); setTxRefreshKey(k => k + 1); }}/>}
       {state.tab === "detail"  && <AssetDetail state={state} dispatch={dispatch} data={data} onRefresh={() => { loadData(); setTxRefreshKey(k => k + 1); }}/>}
       {state.tab === "history" && <History    state={state} dispatch={dispatch} holdings={holdings} refreshKey={txRefreshKey}/>}
-      {state.tab === "autobot"  && <AutoBot   dispatch={dispatch}/>}
+      {state.tab === "autobot"  && <AutoBot   dispatch={dispatch} state={state}/>}
       {state.tab === "backtest" && <Backtest  state={state} dispatch={dispatch}/>}
     </div>
   );

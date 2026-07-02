@@ -103,6 +103,7 @@ export default function Backtest({ state, dispatch }) {
   const [start,     setStart]     = React.useState(daysAgo(365));
   const [end,       setEnd]       = React.useState(today());
   const [interval,  setInterval]  = React.useState('day');
+  const [cash,       setCash]       = React.useState(1_000_000);
   const [commission, setCommission] = React.useState(0.05);
   const [slippage,   setSlippage]   = React.useState(0.0);
   const [result,         setResult]         = React.useState(null);
@@ -153,6 +154,22 @@ export default function Backtest({ state, dispatch }) {
       })
       .catch(e => setExportMsg('오류: ' + e));
   }
+
+  // ticker/service 변경 시 현재가로 기본 투자금 임시 설정 (백테스트 결과 나오면 첫 봉 가격으로 대체)
+  React.useEffect(() => {
+    if (!service || !ticker) return;
+    fetch(`${API_BASE}/api/prices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [service]: [ticker] }),
+    })
+      .then(r => r.json())
+      .then(prices => {
+        const price = prices[ticker] || prices[`KRW-${ticker}`];
+        if (price && price > 0) setCash(Math.round(price));
+      })
+      .catch(() => {});
+  }, [ticker, service]);
 
   // 거래소 목록 로드
   React.useEffect(() => {
@@ -256,15 +273,6 @@ export default function Backtest({ state, dispatch }) {
       priceFormat: { type: 'custom', formatter: fmtShortKRW },
     });
     lineSeries.setData(result.equity_curve);
-    if (result.bnh_curve?.length) {
-      const bnhSeries = equityChart.addLineSeries({
-        color: 'rgba(156,163,175,0.6)', lineWidth: 1,
-        lineStyle: 2,  // dashed
-        priceFormat: { type: 'custom', formatter: fmtShortKRW },
-        lastValueVisible: false, priceLineVisible: false,
-      });
-      bnhSeries.setData(result.bnh_curve);
-    }
     equityChart.timeScale().fitContent();
     equityInst.current = equityChart;
 
@@ -424,12 +432,20 @@ export default function Backtest({ state, dispatch }) {
     fetch(`${API_BASE}/api/backtest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service, strategy: overrideStrategy || strategy, ticker, start, end, interval, commission, slippage }),
+      body: JSON.stringify({ service, strategy: overrideStrategy || strategy, ticker, start, end, interval, cash, commission, slippage }),
     })
       .then(r => r.json())
       .then(data => {
         if (data.error) setError(data.error);
-        else setResult(data);
+        else {
+          setResult(data);
+          if (data.trades?.length) {
+            setCash(Math.round(data.trades[0].entry_price));
+          }
+          if (data.ohlcv?.length) {
+            setExportAmount(Math.round(data.ohlcv[data.ohlcv.length - 1].close));
+          }
+        }
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
@@ -643,17 +659,7 @@ export default function Backtest({ state, dispatch }) {
               <div className="gu-card">
                 <div className="gu-card-head">
                   <div className="gu-h4">수익 곡선</div>
-                  <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--gu-fg3)' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ width: 20, height: 2, background: '#1A55F0', display: 'inline-block' }}/>
-                      전략
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ width: 20, height: 2, background: 'rgba(156,163,175,0.6)', display: 'inline-block', borderTop: '2px dashed rgba(156,163,175,0.6)' }}/>
-                      단순보유
-                    </span>
                   </div>
-                </div>
                 <div ref={equityRef} style={{ width: '100%' }} />
               </div>
 
@@ -761,7 +767,7 @@ export default function Backtest({ state, dispatch }) {
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--gu-fg4)', lineHeight: 1.7 }}>
             지표: <code>SMA(n)</code> · <code>EMA(n)</code> · <code>RSI(n)</code> · <code>BB(n, std)</code> · <code>SUPERT(period, mult)</code> · <code>FGI()</code>
             &nbsp;|&nbsp;
-            추가 지표: <code>ATR(n)</code> · <code>ADX(n)</code>→.adx/.plus_di/.minus_di · <code>MACD(f,s,sig)</code>→.macd/.signal/.hist · <code>DONCHIAN(n)</code>→.upper/.lower/.mid · <code>KELTNER(n,mult)</code>→.upper/.lower/.mid · <code>STOCH(k,d)</code>→.k/.d · <code>ZIGZAG(dev)</code>→.dir/.pivot/.prev/.leg (엘리어트 스윙)
+            추가 지표: <code>ATR(n)</code> · <code>ADX(n)</code>→.adx/.plus_di/.minus_di · <code>MACD(f,s,sig)</code>→.macd/.signal/.hist · <code>DONCHIAN(n)</code>→.upper/.lower/.mid · <code>KELTNER(n,mult)</code>→.upper/.lower/.mid · <code>STOCH(k,d)</code>→.k/.d · <code>ZIGZAG(dev)</code>→.dir/.pivot/.prev/.leg (엘리어트 스윙) · <code>ICHIMOKU(conv,base,spanB,disp)</code>→.tenkan/.kijun/.span_a/.span_b (일목균형표)
             &nbsp;|&nbsp;
             차트: <code>plt(지표)</code> · <code>plt(지표, overlay=False)</code>
             &nbsp;|&nbsp;

@@ -154,6 +154,54 @@ class UpbitAdapter(ExchangeAdapter):
             })
         return result
 
+    @staticmethod
+    def _to_kst(iso: str):
+        """업비트 done_at(ISO, 오프셋 포함)을 KST 기준 naive datetime 문자열로.
+        타임존이 UTC 등으로 와도 09:00 스냅샷 비교가 정확하도록 KST로 변환."""
+        from datetime import datetime, timezone, timedelta
+        try:
+            dt = datetime.fromisoformat(iso)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone(timedelta(hours=9))).replace(tzinfo=None)
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return None
+
+    def get_cash_flows(self) -> list:
+        """업비트 KRW 입출금 내역 (완료건). /v1/deposits · /v1/withdraws
+        상태값 문자열은 API 버전마다 달라서 필터하지 않고, '완료일(done_at)'이
+        찍힌 건만 완료로 간주해 수집한다(견고). flow_at에 실제 완료 시각(KST)을
+        담아 09:00 스냅샷 기준 정확한 반영 여부를 판정할 수 있게 한다."""
+        out = []
+        for endpoint, typ in (('deposits', 'deposit'), ('withdraws', 'withdraw')):
+            try:
+                query = {'currency': 'KRW', 'limit': 100}
+                res = req.get(f'https://api.upbit.com/v1/{endpoint}',
+                              params=query, headers=self._jwt_headers(query), timeout=10)
+                rows = res.json()
+                if not isinstance(rows, list):
+                    print(f"[upbit] get_cash_flows {endpoint} 응답 이상: {rows}")
+                    continue
+                print(f"[upbit] {endpoint}: {len(rows)}건, states={[r.get('state') for r in rows[:5]]}")
+                for it in rows:
+                    if not isinstance(it, dict):
+                        continue
+                    amt = float(it.get('amount') or 0)
+                    done = it.get('done_at')
+                    if amt <= 0 or not done:   # 완료(done_at 존재)된 건만
+                        continue
+                    flow_at = self._to_kst(done) or f"{done[:10]} 12:00:00"
+                    out.append({
+                        'id':      f"upbit:{it.get('uuid')}",
+                        'service': self.service.lower(),
+                        'type':    typ,
+                        'amount':  round(amt),
+                        'flow_at': flow_at,   # KST 완료 시각 (YYYY-MM-DD HH:MM:SS)
+                    })
+            except Exception as e:
+                print(f"[upbit] get_cash_flows {endpoint} error: {e}")
+        return out
+
     def _jwt_headers(self, query: dict) -> dict:
         import jwt, uuid, hashlib, urllib.parse
         qs = urllib.parse.urlencode(query).encode()

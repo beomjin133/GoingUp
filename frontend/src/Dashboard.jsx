@@ -2,6 +2,7 @@ import React from 'react';
 import { API_BASE, computeTotals, makeEquityCurve, fmt, fmtPrice, fmtPct, fmtSigned, fmtShortKRW } from './data';
 import { Icon, AssetLogo, KindTag, AreaChart, Donut } from './components';
 import ConnectAssetModal from './ConnectAssetModal';
+import CashFlowModal from './CashFlowModal';
 
 export default function Dashboard({ state, dispatch, data, onRefresh }) {
   const { holdings, cashKRW, cashByService = {} } = data;
@@ -13,18 +14,27 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
   const totalPLPct = (totalPL / totalCost) * 100;
   const [tf, setTf] = React.useState("3M");
   const [snapshots, setSnapshots] = React.useState([]);
+  const [netFlow, setNetFlow] = React.useState(0);  // 기준일 이후 순입금 (오늘 지점 보정용)
+  const [chartRefresh, setChartRefresh] = React.useState(0);
   const TF_DAYS = { "1D": 1, "1W": 7, "1M": 30, "3M": 90, "1Y": 365, "ALL": 3650 };
 
   React.useEffect(() => {
     fetch(`${API_BASE}/api/portfolio/chart?days=${TF_DAYS[tf]}`)
       .then(r => r.json())
-      .then(data => Array.isArray(data) ? setSnapshots(data) : setSnapshots([]));
-  }, [tf]);
+      .then(data => {
+        if (data && Array.isArray(data.points)) {
+          setSnapshots(data.points);
+          setNetFlow(data.net_flow_today || 0);
+        } else { setSnapshots([]); setNetFlow(0); }
+      });
+  }, [tf, chartRefresh]);
 
+  // 곡선은 '입출금 효과 제거' 보정값. 오늘 지점도 순입금만큼 차감해 계단 제거.
+  // 실제 스냅샷이 없으면 가짜 곡선(makeEquityCurve) 대신 현재 총자산 평평선으로 정직하게 표시.
   const equity = React.useMemo(() => {
-    if (snapshots.length >= 1) return [...snapshots.map(d => d.value), total];
-    return makeEquityCurve(90, total);
-  }, [snapshots, total]);
+    if (snapshots.length >= 1) return [...snapshots.map(d => d.value), total - netFlow];
+    return [total, total];
+  }, [snapshots, total, netFlow]);
 
   const equityLabels = React.useMemo(() => {
     if (snapshots.length >= 1) return [...snapshots.map(d => d.date), '오늘'];
@@ -33,6 +43,7 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
 
   const [cashExpanded, setCashExpanded] = React.useState(false);
   const [showConnectModal, setShowConnectModal] = React.useState(false);
+  const [showCashFlow, setShowCashFlow] = React.useState(false);
   const [connections, setConnections] = React.useState([]);
   const [currentTime, setCurrentTime] = React.useState(new Date());
 
@@ -67,6 +78,9 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
         </div>
         <div className="gu-page-actions">
           <button className="gu-btn gu-btn-ghost gu-btn-sm" onClick={onRefresh}><Icon name="refresh" size={13}/> 새로고침</button>
+          <button className="gu-btn gu-btn-ghost gu-btn-sm" onClick={() => setShowCashFlow(true)}>
+            <Icon name="download" size={13}/> 입출금
+          </button>
           <button className="gu-btn gu-btn-secondary gu-btn-sm" onClick={() => setShowConnectModal(true)}>
             <Icon name="link" size={13}/> 자산 연결
           </button>
@@ -171,6 +185,12 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
           connections={connections}
           onConnect={(data) => setConnections(prev => [...prev, data])}
           onRemoveConnection={(idx) => setConnections(prev => prev.filter((_, i) => i !== idx))}
+        />
+      )}
+      {showCashFlow && (
+        <CashFlowModal
+          onClose={() => setShowCashFlow(false)}
+          onChanged={() => setChartRefresh(c => c + 1)}
         />
       )}
     </main>
@@ -570,7 +590,8 @@ export function LotsPanel({ h, hidden, onSellLot }) {
               <div className={"gu-num" + (hidden ? " gu-blur-amt" : "")} style={{textAlign:"right"}}>{fmt(cost)}</div>
               <div className={"gu-num" + (hidden ? " gu-blur-amt" : "")} style={{textAlign:"right", fontWeight:600}}>{fmt(value)}</div>
               <div className={"gu-num " + (up ? "gu-up" : "gu-down")} style={{textAlign:"right", fontWeight:600}}>
-                {fmtSigned(pl)} <span style={{fontWeight:500, opacity:0.85}}>({fmtPct(plPct)})</span>
+                <span className={hidden ? "gu-blur-amt" : ""}>{fmtSigned(pl)}</span>{' '}
+                <span style={{fontWeight:500, opacity:0.85}}>({fmtPct(plPct)})</span>
               </div>
               <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:4}}>
                 {onSellLot && l.source !== 'auto' && (

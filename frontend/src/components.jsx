@@ -102,9 +102,10 @@ export function AreaChart({ data, height = 120, color = "#1A55F0", fillOpacity =
     setHoverIdx(Math.min(data.length - 1, Math.max(0, Math.round(x / step))));
   }
 
-  const baseValue = data[0];
-  const hovPct = hoverIdx !== null && baseValue > 0
-    ? ((data[hoverIdx] - baseValue) / baseValue) * 100 : null;
+  // 직전 점(전일) 대비 변화율. 첫 점은 비교 대상이 없어 표시하지 않음.
+  const prevValue = hoverIdx !== null && hoverIdx > 0 ? data[hoverIdx - 1] : null;
+  const hovPct = prevValue && prevValue > 0
+    ? ((data[hoverIdx] - prevValue) / prevValue) * 100 : null;
   const tooltipLeftPct = hoverIdx != null
     ? Math.min(Math.max((hoverIdx / Math.max(data.length - 1, 1)) * 100, 8), 92)
     : 50;

@@ -258,14 +258,6 @@ export default function AssetDetail({ state, dispatch, data, onRefresh }) {
                 onClick={() => setSide('sell')}>매도</button>
             </div>
             <div className="gu-trade-body">
-              <div style={{fontSize:11, color:'var(--gu-fg3)', marginBottom:10}}>
-                시장가 · 현재가 ₩{fmtPrice(selected.price)}
-                {myAmt > 0 && (
-                  <span style={{marginLeft:8}}>
-                    보유 {myAmt.toLocaleString('ko-KR', {maximumFractionDigits:8})} {selected.ticker}
-                  </span>
-                )}
-              </div>
               <div className="gu-trade-field">
                 <span className="gu-label">금액</span>
                 <div className="gu-input-affix">

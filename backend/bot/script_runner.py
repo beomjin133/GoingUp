@@ -249,6 +249,24 @@ def _zigzag(high, low, close, dev=0.1):
     return pd.Series(dir_arr), pd.Series(piv_arr), pd.Series(prev_arr), pd.Series(leg_arr)
 
 
+def _ichimoku(high, low, close, conv=9, base=26, span_b=52, disp=26):
+    """일목균형표(이치모쿠). 반환: (전환선, 기준선, 선행스팬A, 선행스팬B)
+
+    ※ 미래참조 방지: 선행스팬은 disp(26)봉 '앞에' 그려지는 지표인데, 현재 봉의
+      매매 판단에 쓰는 '현재 봉 아래 구름' 값은 disp봉 전에 투영된 것이므로
+      .shift(disp)로 과거→현재 정렬한다(현재 봉에서 모두 기지의 값, look-ahead 없음).
+      후행스팬(치코우)은 forward-shift가 필요해 미래참조 위험이 있어 제외한다.
+    """
+    h = pd.Series(high); l = pd.Series(low)
+    def mid(n):
+        return (h.rolling(n).max() + l.rolling(n).min()) / 2.0
+    tenkan = mid(conv)                       # 전환선
+    kijun  = mid(base)                        # 기준선
+    sa = ((tenkan + kijun) / 2.0).shift(disp)   # 선행스팬A (현재 봉 아래 구름)
+    sb = mid(span_b).shift(disp)                # 선행스팬B
+    return tenkan, kijun, sa, sb
+
+
 # ── 지표 프록시 ────────────────────────────────────────────
 
 def _num(x):
@@ -340,6 +358,14 @@ class _ZZ:
         self.pivot = pivot        # 마지막 확정 피벗 가격
         self.prev  = prev         # 직전 확정 피벗 가격
         self.leg   = leg          # 확정 다리 수(파동 카운트 근사)
+
+class _Ichi:
+    """일목균형표. tenkan(전환선)/kijun(기준선)/span_a/span_b(현재봉 구름) 모두 _Ind."""
+    def __init__(self, tenkan, kijun, span_a, span_b):
+        self.tenkan = tenkan
+        self.kijun  = kijun
+        self.span_a = span_a
+        self.span_b = span_b
 
 
 # ── 상태 변수 (mem) ────────────────────────────────────────
@@ -541,6 +567,17 @@ def compile_script(script: str) -> type:
                     s._user_cache[kl]  = _Ind(lg_.to_numpy(), s.data, key=kl)
                 return _ZZ(s._user_cache[kd_], s._user_cache[kp], s._user_cache[kv], s._user_cache[kl])
 
+            def ICHIMOKU(conv=9, base=26, span_b=52, disp=26):
+                p = (conv, base, span_b, disp)
+                kt, kk, ka, kb = ('ICHI_T',)+p, ('ICHI_K',)+p, ('ICHI_SA',)+p, ('ICHI_SB',)+p
+                if kt not in s._user_cache:
+                    t_, k_, a_, b_ = _ichimoku(_to_np(s.data.High), _to_np(s.data.Low), _to_np(s.data.Close), conv, base, span_b, disp)
+                    s._user_cache[kt] = _Ind(t_.to_numpy(), s.data, key=kt)
+                    s._user_cache[kk] = _Ind(k_.to_numpy(), s.data, key=kk)
+                    s._user_cache[ka] = _Ind(a_.to_numpy(), s.data, key=ka)
+                    s._user_cache[kb] = _Ind(b_.to_numpy(), s.data, key=kb)
+                return _Ichi(s._user_cache[kt], s._user_cache[kk], s._user_cache[ka], s._user_cache[kb])
+
             def mem(default):
                 idx = s._mem_counter; s._mem_counter += 1
                 if idx not in s._mems:
@@ -620,12 +657,19 @@ def compile_script(script: str) -> type:
                         if k is None: continue
                         local_plt_calls.append({'key': k, 'name': name or f'Stoch {lbl}',
                                                 'overlay': False, 'type': 'ind'})
+                elif isinstance(indicator, _Ichi):
+                    for lbl, sub in [('전환선', indicator.tenkan), ('기준선', indicator.kijun),
+                                     ('선행A', indicator.span_a), ('선행B', indicator.span_b)]:
+                        k = getattr(sub, '_key', None)
+                        if k is None: continue
+                        local_plt_calls.append({'key': k, 'name': name or lbl,
+                                                'overlay': True, 'type': 'ind'})
 
             ns = {
                 'SMA': SMA, 'EMA': EMA, 'RSI': RSI, 'BB': BB, 'SUPERT': SUPERT, 'FGI': FGI,
                 'ATR': ATR, 'ADX': ADX, 'MACD': MACD, 'DONCHIAN': DONCHIAN, 'KELTNER': KELTNER, 'STOCH': STOCH,
                 'atr': ATR, 'adx': ADX, 'macd': MACD, 'donchian': DONCHIAN, 'keltner': KELTNER, 'stoch': STOCH,
-                'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG,
+                'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG, 'ICHIMOKU': ICHIMOKU, 'ichimoku': ICHIMOKU,
                 'sma': SMA, 'ema': EMA, 'rsi': RSI, 'bb': BB, 'supert': SUPERT, 'fgi': FGI,
                 'mem': mem, 'plt': plt,
                 'close': s.data.Close, 'open': s.data.Open,
@@ -639,7 +683,7 @@ def compile_script(script: str) -> type:
             }
             exec(s._script, ns)
             s._user_inds = {k: v for k, v in ns.items()
-                            if isinstance(v, (_Ind, _BB, _Mem, _ST, _MACD, _ADX, _Chan, _Stoch, _ZZ))}
+                            if isinstance(v, (_Ind, _BB, _Mem, _ST, _MACD, _ADX, _Chan, _Stoch, _ZZ, _Ichi))}
             type(self)._ind_snapshot = dict(s._user_cache)
             type(self)._plt_calls    = local_plt_calls
 
@@ -688,6 +732,12 @@ def compile_script(script: str) -> type:
                            s._user_cache.get(('ZZ_PIV', dev)),
                            s._user_cache.get(('ZZ_PREV', dev)),
                            s._user_cache.get(('ZZ_LEG', dev)))
+            def ICHIMOKU(conv=9, base=26, span_b=52, disp=26):
+                p = (conv, base, span_b, disp)
+                return _Ichi(s._user_cache.get(('ICHI_T',)+p),
+                             s._user_cache.get(('ICHI_K',)+p),
+                             s._user_cache.get(('ICHI_SA',)+p),
+                             s._user_cache.get(('ICHI_SB',)+p))
             def mem(default):
                 idx = s._mem_counter; s._mem_counter += 1
                 return s._mems.get(idx, _Mem(default))
@@ -707,7 +757,7 @@ def compile_script(script: str) -> type:
                 'SMA': SMA, 'EMA': EMA, 'RSI': RSI, 'BB': BB, 'SUPERT': SUPERT, 'FGI': FGI,
                 'ATR': ATR, 'ADX': ADX, 'MACD': MACD, 'DONCHIAN': DONCHIAN, 'KELTNER': KELTNER, 'STOCH': STOCH,
                 'atr': ATR, 'adx': ADX, 'macd': MACD, 'donchian': DONCHIAN, 'keltner': KELTNER, 'stoch': STOCH,
-                'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG,
+                'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG, 'ICHIMOKU': ICHIMOKU, 'ichimoku': ICHIMOKU,
                 'sma': SMA, 'ema': EMA, 'rsi': RSI, 'bb': BB, 'supert': SUPERT, 'fgi': FGI,
                 'mem': mem, 'plt': lambda *a, **k: None,
                 'close':  float(s.data.Close[-1]),
@@ -787,6 +837,8 @@ def live_run(script: str, ticker: str, adapter, *,
         def __rsub__(self, o): return float(o) - self.curr
         def __mul__(self, o):  return self.curr * float(o)
         def __rmul__(self, o): return float(o) * self.curr
+        def __truediv__(self, o):  return self.curr / float(o)
+        def __rtruediv__(self, o): return float(o) / self.curr
         def __repr__(self):    return f"{self.curr:.4f}"
 
     def _last2(series):
@@ -857,6 +909,11 @@ def live_run(script: str, ticker: str, adapter, *,
         cv, pv = _last2(pv_); cl, pl = _last2(lg_)
         return _ZZ(_V(cd_, pd2), _V(cp, pp), _V(cv, pv), _V(cl, pl))
 
+    def ICHIMOKU(conv=9, base=26, span_b=52, disp=26):
+        t_, k_, a_, b_ = _ichimoku(high, low, close, conv, base, span_b, disp)
+        ct, pt = _last2(t_); ck, pk = _last2(k_); ca, pa = _last2(a_); cb, pb = _last2(b_)
+        return _Ichi(_V(ct, pt), _V(ck, pk), _V(ca, pa), _V(cb, pb))
+
     def _xover(a, b):
         ac = a.curr if isinstance(a, _V) else float(a)
         ap = a.prev if isinstance(a, _V) else ac
@@ -906,7 +963,7 @@ def live_run(script: str, ticker: str, adapter, *,
         'SMA': SMA, 'EMA': EMA, 'RSI': RSI, 'BB': BB, 'SUPERT': SUPERT, 'FGI': FGI,
         'ATR': ATR, 'ADX': ADX, 'MACD': MACD, 'DONCHIAN': DONCHIAN, 'KELTNER': KELTNER, 'STOCH': STOCH,
         'atr': ATR, 'adx': ADX, 'macd': MACD, 'donchian': DONCHIAN, 'keltner': KELTNER, 'stoch': STOCH,
-        'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG,
+        'ZIGZAG': ZIGZAG, 'zigzag': ZIGZAG, 'ICHIMOKU': ICHIMOKU, 'ichimoku': ICHIMOKU,
         'sma': SMA, 'ema': EMA, 'rsi': RSI, 'bb': BB, 'supert': SUPERT, 'fgi': FGI,
         'mem': mem, 'plt': lambda *a, **k: None,
         'close': float(close[-1]), 'open': float(open_[-1]),

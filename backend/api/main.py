@@ -38,6 +38,11 @@ def _job_snapshot():
         take_snapshot()
     except Exception as e:
         print(f"[scheduler] snapshot 오류: {e}")
+    try:
+        n = _sync_cash_flows_internal()
+        print(f"[scheduler] 입출금 동기화 {n}건")
+    except Exception as e:
+        print(f"[scheduler] 입출금 동기화 오류: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -472,6 +477,10 @@ def get_stock_chart(ticker: str, days: int = 365):
 
 @app.get("/api/portfolio/chart")
 def get_portfolio_chart(days: int = 90):
+    """자산 추이 — 입출금(순유입) 효과를 제거해 성과만 보이도록 보정.
+    보정값 = 총자산 − (기준일 이후 누적 순입금).  입금 시 총자산·순입금이 같이 늘어
+    보정값은 그대로 유지되므로 입출금으로 곡선이 튀지 않는다."""
+    from datetime import timedelta as _td, datetime as _dt, time as _time
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -480,8 +489,127 @@ def get_portfolio_chart(days: int = 90):
                 (days,)
             )
             rows = cur.fetchall()
+    # cash_flows 테이블이 없어도(미생성) 스냅샷은 그대로 반환 — 보정만 생략
+    flows = []
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT flow_at, type, amount FROM cash_flows")
+                flows = cur.fetchall()
+    except Exception as e:
+        print(f"[chart] cash_flows 조회 실패(테이블 미생성?): {e}")
     rows = sorted(rows, key=lambda r: r['date'])
-    return [{'date': str(r['date']), 'value': r['total_value']} for r in rows]
+    if not rows:
+        return {'points': [], 'net_flow_today': 0}
+
+    base_date = rows[0]['date']
+
+    def _flow_moment(f):
+        fa = f['flow_at']
+        return fa if isinstance(fa, _dt) else _dt.fromisoformat(str(fa))
+
+    def net_by(moment):
+        """측정 시각(moment)까지 총자산에 이미 반영된 순입금 합."""
+        s = 0
+        for f in flows:
+            fm = _flow_moment(f)
+            # 기준(첫 스냅샷)일 이전/당일 입금은 시작자본의 일부 → 차감 제외
+            if fm.date() <= base_date:
+                continue
+            if fm <= moment:
+                s += f['amount'] if f['type'] == 'deposit' else -f['amount']
+        return s
+
+    # 라벨이 L인 스냅샷은 실제로 (L+1일) 09:00에 측정된 값이다.
+    def _measured_at(label):
+        return _dt.combine(label + _td(days=1), _time(9, 0))
+
+    points = [{'date': str(r['date']),
+               'value': round(r['total_value'] - net_by(_measured_at(r['date']))),
+               'raw':   r['total_value']}
+              for r in rows]
+    # 라이브(오늘) 지점: 지금 이 순간까지 반영된 순입금
+    net_today = net_by(_dt.now())
+    return {'points': points, 'net_flow_today': net_today}
+
+
+# ── 입출금(현금흐름) ─────────────────────────────────────
+
+def _sync_cash_flows_internal() -> int:
+    """각 거래소 어댑터의 입출금 내역을 cash_flows에 동기화 (dedup)."""
+    synced = 0
+    for adapter in get_adapters():
+        try:
+            flows = adapter.get_cash_flows()
+        except Exception as e:
+            print(f"[cash-flows] {type(adapter).__name__} 조회 실패: {e}")
+            continue
+        for cf in flows:
+            try:
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO cash_flows (id, service, type, amount, flow_at) "
+                            "VALUES (%s, %s, %s, %s, %s) "
+                            "ON DUPLICATE KEY UPDATE amount=VALUES(amount), "
+                            "flow_at=VALUES(flow_at)",
+                            (cf['id'], cf['service'], cf['type'], cf['amount'], cf['flow_at'])
+                        )
+                synced += 1
+            except Exception as e:
+                print(f"[cash-flows] 저장 실패 {cf}: {e}")
+    return synced
+
+
+@app.post("/api/cash-flows/sync")
+def sync_cash_flows():
+    return {'ok': True, 'synced': _sync_cash_flows_internal()}
+
+
+@app.get("/api/cash-flows")
+def list_cash_flows():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, service, type, amount, flow_at FROM cash_flows ORDER BY flow_at DESC")
+            rows = cur.fetchall()
+    return [{'id': r['id'], 'service': r['service'], 'type': r['type'],
+             'amount': int(r['amount']),
+             'flow_date': str(r['flow_at'])[:10],   # 표시용 날짜
+             'flow_at': str(r['flow_at'])} for r in rows]
+
+
+@app.post("/api/cash-flows")
+def add_cash_flow(body: dict):
+    """수동 입출금 기록 (KIS 등 자동 미지원 거래소 · 보정용)."""
+    import uuid as _uuid
+    typ       = body.get('type')
+    amount    = body.get('amount')
+    flow_date = body.get('flow_date')
+    if typ not in ('deposit', 'withdraw'):
+        return {'ok': False, 'msg': "type은 deposit 또는 withdraw"}
+    if not amount or float(amount) <= 0 or not flow_date:
+        return {'ok': False, 'msg': '금액과 날짜를 입력하세요'}
+    cid = f"manual:{_uuid.uuid4()}"
+    # 수동 입력은 시각이 없으므로 정오(12:00)로 둔다 → 그날 09:00 스냅샷엔 미포함,
+    # 다음날 09:00 스냅샷(라벨=당일)부터 반영되는 자연스러운 기준.
+    flow_at = f"{flow_date} 12:00:00"
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO cash_flows (id, service, type, amount, flow_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (cid, body.get('service', 'manual'), typ,
+                 abs(round(float(amount))), flow_at)
+            )
+    return {'ok': True, 'id': cid}
+
+
+@app.delete("/api/cash-flows/{cf_id}")
+def delete_cash_flow(cf_id: str):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM cash_flows WHERE id = %s", (cf_id,))
+    return {'ok': True}
 
 
 # ── 거래소 목록 ──────────────────────────────────────────
@@ -802,7 +930,7 @@ def create_strategy(body: dict):
 @app.patch("/api/strategies/{strategy_id}")
 def update_strategy(strategy_id: int, body: dict):
     from datetime import datetime
-    fields = {k: v for k, v in body.items() if k in ("enabled", "amount", "cron", "params")}
+    fields = {k: v for k, v in body.items() if k in ("enabled", "amount", "cron", "params", "ticker")}
     if not fields:
         return {"ok": False, "msg": "수정할 필드가 없습니다"}
     # 활성화(enabled→1) 시: last_run=now(캐치업 방지) + armed 판정(헌 신호면 0).
@@ -1015,7 +1143,8 @@ async def run_backtest(request: Request):
         if plt_calls:
             # plt() 호출 기반 — 사용자가 명시적으로 선택한 지표만 그림
             from script_runner import (_sma, _ema, _rsi, _bb_upper, _bb_mid, _bb_lower, _supertrend,
-                                        _atr, _adx, _macd, _donchian, _keltner, _stoch, _zigzag)
+                                        _atr, _adx, _macd, _donchian, _keltner, _stoch, _zigzag,
+                                        _ichimoku)
             close_np = df['Close'].to_numpy(dtype=float)
             high_np  = df['High'].to_numpy(dtype=float)
             low_np   = df['Low'].to_numpy(dtype=float)
@@ -1080,6 +1209,10 @@ async def run_backtest(request: Request):
                     elif t == 'STOCH_D': arr = _stoch(high_np, low_np, close_np, k[1], k[2])[1].to_numpy()
                     elif t == 'ZZ_PIV':  arr = _zigzag(high_np, low_np, close_np, k[1])[1].to_numpy()
                     elif t == 'ZZ_PREV': arr = _zigzag(high_np, low_np, close_np, k[1])[2].to_numpy()
+                    elif t == 'ICHI_T':  arr = _ichimoku(high_np, low_np, close_np, k[1], k[2], k[3], k[4])[0].to_numpy()
+                    elif t == 'ICHI_K':  arr = _ichimoku(high_np, low_np, close_np, k[1], k[2], k[3], k[4])[1].to_numpy()
+                    elif t == 'ICHI_SA': arr = _ichimoku(high_np, low_np, close_np, k[1], k[2], k[3], k[4])[2].to_numpy()
+                    elif t == 'ICHI_SB': arr = _ichimoku(high_np, low_np, close_np, k[1], k[2], k[3], k[4])[3].to_numpy()
                     else: continue
 
                     pts = build_pts(arr, ovl)

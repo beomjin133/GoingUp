@@ -27,6 +27,12 @@ class ExchangeAdapter(ABC):
         """거래내역 반환. id, time, side, ticker, name, kind, amt, price, total"""
         return []
 
+    def get_cash_flows(self) -> list:
+        """원화 입출금 내역 반환. 항목: { id, service, type('deposit'|'withdraw'), amount, flow_at }
+        flow_at은 완료 시각(KST, 'YYYY-MM-DD HH:MM:SS'). 09:00 스냅샷 기준 반영 판정에 사용.
+        지원하지 않는 거래소는 빈 리스트(→ 수동 입력으로 대체)."""
+        return []
+
     def place_order(self, side: str, ticker: str, price: float, qty: float) -> dict:
         """주문 실행. { success: bool, msg: str }"""
         return {'success': False, 'msg': '이 거래소는 주문을 지원하지 않습니다'}
