@@ -4,6 +4,38 @@ import { Icon, AssetLogo, KindTag, AreaChart, Donut } from './components';
 import ConnectAssetModal from './ConnectAssetModal';
 import CashFlowModal from './CashFlowModal';
 
+// 스냅샷(일 단위)을 타임프레임 단위로 묶기 위한 그룹 키.
+// 같은 키끼리 묶고 각 구간의 마지막(종가) 값만 남긴다.
+function bucketKey(dateStr, tf) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const y = d.getFullYear();
+  if (tf === '1W') {
+    const off = (d.getDay() + 6) % 7;              // 월요일 시작 주
+    d.setDate(d.getDate() - off);
+    return 'W' + d.toISOString().slice(0, 10);
+  }
+  if (tf === '1M') return `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  if (tf === '3M') return `${y}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+  if (tf === '1Y') return `${y}`;
+  return dateStr;                                   // 1D, ALL → 일 단위(그대로)
+}
+
+// 각 구간의 대표 라벨(구간 기준값). 주는 시작일(월), 월/분기/연은 해당 기간.
+function bucketLabel(dateStr, tf) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const y = d.getFullYear();
+  const p = n => String(n).padStart(2, '0');
+  if (tf === '1W') {
+    const off = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - off);                   // 그 주 월요일
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  if (tf === '1M') return `${y}-${p(d.getMonth() + 1)}`;
+  if (tf === '3M') return `${y}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+  if (tf === '1Y') return `${y}`;
+  return dateStr;                                   // 1D, ALL
+}
+
 export default function Dashboard({ state, dispatch, data, onRefresh }) {
   const { holdings, cashKRW, cashByService = {} } = data;
   const { total, byKind } = computeTotals(holdings, cashKRW);
@@ -12,14 +44,14 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
   const totalPL = holdings.reduce((s, h) => s + h.pl, 0);
   const totalCost = holdings.reduce((s, h) => s + h.costBasis, 0);
   const totalPLPct = (totalPL / totalCost) * 100;
-  const [tf, setTf] = React.useState("3M");
+  const [tf, setTf] = React.useState("1D");
   const [snapshots, setSnapshots] = React.useState([]);
   const [netFlow, setNetFlow] = React.useState(0);  // 기준일 이후 순입금 (오늘 지점 보정용)
   const [chartRefresh, setChartRefresh] = React.useState(0);
-  const TF_DAYS = { "1D": 1, "1W": 7, "1M": 30, "3M": 90, "1Y": 365, "ALL": 3650 };
 
+  // 전체 기록을 한 번에 받아두고, 타임프레임은 '묶는 단위'로만 사용한다.
   React.useEffect(() => {
-    fetch(`${API_BASE}/api/portfolio/chart?days=${TF_DAYS[tf]}`)
+    fetch(`${API_BASE}/api/portfolio/chart?days=3650`)
       .then(r => r.json())
       .then(data => {
         if (data && Array.isArray(data.points)) {
@@ -27,19 +59,27 @@ export default function Dashboard({ state, dispatch, data, onRefresh }) {
           setNetFlow(data.net_flow_today || 0);
         } else { setSnapshots([]); setNetFlow(0); }
       });
-  }, [tf, chartRefresh]);
+  }, [chartRefresh]);
 
   // 곡선은 '입출금 효과 제거' 보정값. 오늘 지점도 순입금만큼 차감해 계단 제거.
   // 실제 스냅샷이 없으면 가짜 곡선(makeEquityCurve) 대신 현재 총자산 평평선으로 정직하게 표시.
+  // 선택한 단위로 스냅샷을 묶어 각 구간의 마지막(종가) 값만 남긴다.
+  const bucketed = React.useMemo(() => {
+    if (!snapshots.length) return [];
+    const m = new Map();
+    for (const s of snapshots) m.set(bucketKey(s.date, tf), s);  // 오름차순 → 마지막이 종가
+    return [...m.values()].map(s => ({ value: s.value, label: bucketLabel(s.date, tf) }));
+  }, [snapshots, tf]);
+
   const equity = React.useMemo(() => {
-    if (snapshots.length >= 1) return [...snapshots.map(d => d.value), total - netFlow];
+    if (bucketed.length >= 1) return [...bucketed.map(d => d.value), total - netFlow];
     return [total, total];
-  }, [snapshots, total, netFlow]);
+  }, [bucketed, total, netFlow]);
 
   const equityLabels = React.useMemo(() => {
-    if (snapshots.length >= 1) return [...snapshots.map(d => d.date), '오늘'];
+    if (bucketed.length >= 1) return [...bucketed.map(d => d.label), '오늘'];
     return [];
-  }, [snapshots]);
+  }, [bucketed]);
 
   const [cashExpanded, setCashExpanded] = React.useState(false);
   const [showConnectModal, setShowConnectModal] = React.useState(false);
